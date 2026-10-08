@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Добавлен fallback-режим для LG webOS 5+ и других старых TV-браузеров: совместимая Chromium 68+ сборка, безопасный `audio.play()`, необязательный Media Session API, UUID/File API fallbacks и CSS-деградация без современных viewport-функций.
+
 ## 1.1.0 — 2026-10-08
 
 - Отдельный WebDAV-раздел скрыт: удалённые папки открываются непосредственно внутри Library без download/offline-действий.

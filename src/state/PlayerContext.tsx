@@ -9,6 +9,8 @@ import {
   useState,
 } from "react";
 import { streamUrl } from "../api";
+import { browserCompatibilityMode } from "../browser-compat";
+import { requestPlayback, updateMediaSessionMetadata } from "../media-compat";
 import type { Track } from "../types";
 
 type RepeatMode = "off" | "all" | "one";
@@ -62,16 +64,14 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     setDuration(0);
     setError(null);
     if (shouldAutoplay.current) {
-      void audio.play().catch(() => setError("Playback could not start. Try pressing Play."));
+      void requestPlayback(audio).catch(() => setError("Playback could not start. Try pressing Play."));
     }
-    if ("mediaSession" in navigator) {
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: currentTrack.title,
-        artist: currentTrack.artist,
-        album: currentTrack.album,
-        artwork: [{ src: "/app-logo.png", sizes: "1200x1200", type: "image/png" }],
-      });
-    }
+    updateMediaSessionMetadata({
+      title: currentTrack.title,
+      artist: currentTrack.artist,
+      album: currentTrack.album,
+      artwork: [{ src: "/app-logo.png", sizes: "1200x1200", type: "image/png" }],
+    }, browserCompatibilityMode() === "modern");
   }, [currentTrack]);
 
   useEffect(() => {
@@ -104,7 +104,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     if (!audio || !currentTrack) return;
     if (audio.paused) {
       shouldAutoplay.current = true;
-      void audio.play().catch(() => setError("Playback could not start."));
+      void requestPlayback(audio).catch(() => setError("Playback could not start."));
     } else {
       audio.pause();
     }
@@ -207,7 +207,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
         onEnded={() => {
           if (repeat === "one" && audioRef.current) {
             audioRef.current.currentTime = 0;
-            void audioRef.current.play();
+            void requestPlayback(audioRef.current).catch(() => setError("Playback could not continue."));
           } else if (repeat === "all" || currentIndex < queue.length - 1) {
             next();
           } else {

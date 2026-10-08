@@ -4,7 +4,8 @@ import type { Track, WebDavItem } from "./types";
 export function trackFromItem(item: WebDavItem): Track {
   const withoutExtension = item.name.replace(/\.[^.]+$/, "");
   const split = withoutExtension.split(/\s+-\s+/, 2);
-  const parent = item.path.split("/").filter(Boolean).at(-2);
+  const pathParts = item.path.split("/").filter(Boolean);
+  const parent = pathParts[pathParts.length - 2];
   return {
     id: item.path,
     title: split.length === 2 ? split[1] : withoutExtension,

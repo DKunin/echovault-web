@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { ArrowLeft, Download, ListMusic, Play, Shuffle, Upload } from "lucide-react";
+import { readCompatibleFileText } from "../browser-compat";
 import { shuffledTracks } from "../music-library";
 import {
   decodePlaylist,
@@ -109,7 +110,7 @@ export function PlaylistsPage({ settings, userId }: PlaylistsPageProps) {
     setStatus(null);
     try {
       if (file.size > maximumPlaylistFileSize) throw new Error("This playlist file is too large to import.");
-      const parsed = decodePlaylist(await file.text());
+      const parsed = decodePlaylist(await readCompatibleFileText(file));
       const imported = importedPlaylist(parsed, playlists.map((playlist) => playlist.name));
       replacePlaylists([...playlists, imported]);
       setSelectedID(imported.id);

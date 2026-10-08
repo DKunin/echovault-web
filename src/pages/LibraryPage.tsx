@@ -88,7 +88,7 @@ export function LibraryPage({ settings, onNavigate }: LibraryPageProps) {
   };
 
   return (
-    <section className="page library-page">
+    <section className={showSearch ? "page library-page search-open" : "page library-page"}>
       <header className="page-header library-header">
         <div className="library-title">
           <h1>Library</h1>

@@ -1,4 +1,5 @@
 import { collectFolderTracks } from "./music-library";
+import { createCompatibleUuid } from "./browser-compat";
 import type { Track } from "./types";
 
 export const playlistFormat = "com.dkunin.echovault.playlist";
@@ -76,10 +77,10 @@ export function relativePathForPlaylistItem(
 export function playlistFromTracks(name: string, tracks: Track[], endpoint: string): MusicPlaylist {
   const timestamp = nativeDateNow();
   return {
-    id: crypto.randomUUID(),
+    id: createCompatibleUuid(),
     name,
     items: tracks.map((track) => ({
-      id: crypto.randomUUID(),
+      id: createCompatibleUuid(),
       kind: "track",
       referenceID: portableReference("track", track.path, endpoint),
       title: track.title,
@@ -124,15 +125,16 @@ export function decodePlaylist(contents: string): MusicPlaylist {
 export function importedPlaylist(source: MusicPlaylist, existingNames: string[]): MusicPlaylist {
   const timestamp = nativeDateNow();
   const references = new Set<string>();
-  const items = source.items.flatMap((item) => {
+  const items: PlaylistItem[] = [];
+  for (const item of source.items) {
     const key = `${item.kind}\u0000${item.referenceID}`;
-    if (references.has(key)) return [];
+    if (references.has(key)) continue;
     references.add(key);
-    return [{ ...item, id: crypto.randomUUID() }];
-  });
+    items.push({ ...item, id: createCompatibleUuid() });
+  }
 
   return {
-    id: crypto.randomUUID(),
+    id: createCompatibleUuid(),
     name: availableImportedName(source.name, existingNames),
     items,
     createdAt: timestamp,
@@ -155,13 +157,14 @@ export async function resolvePlaylistTracks(
   for (const item of playlist.items) {
     const path = relativePathForPlaylistItem(item, endpoint);
     if (path === null) continue;
+    const pathParts = path.split("/").filter(Boolean);
     const candidates = item.kind === "folder"
       ? await collectFolderTracks(path)
       : [{
           id: path,
           title: item.title,
           artist: item.subtitle || "Unknown Artist",
-          album: decodeURIComponent(path.split("/").filter(Boolean).at(-2) ?? "WebDAV"),
+          album: decodeURIComponent(pathParts[pathParts.length - 2] ?? "WebDAV"),
           path,
         }];
     for (const track of candidates) {
