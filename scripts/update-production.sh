@@ -44,9 +44,21 @@ npm run validate
 pm2 startOrReload ecosystem.config.cjs --update-env
 pm2 save
 
-curl --fail --silent --show-error \
-  --header "X-Auth-User: deploy-check" \
-  --header "X-Auth-User-Id: deploy-check" \
-  http://127.0.0.1:3338/api/session >/dev/null
+session_ready=0
+for _attempt in {1..15}; do
+  if curl --fail --silent \
+    --header "X-Auth-User: deploy-check" \
+    --header "X-Auth-User-Id: deploy-check" \
+    http://127.0.0.1:3338/api/session >/dev/null; then
+    session_ready=1
+    break
+  fi
+  sleep 1
+done
+
+if [[ "$session_ready" -ne 1 ]]; then
+  echo "EchoVault Web did not become ready after the PM2 reload." >&2
+  exit 1
+fi
 
 echo "EchoVault Web updated to $(git rev-parse --short HEAD) and verified."
