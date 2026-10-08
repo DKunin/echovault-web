@@ -1,0 +1,19 @@
+services:
+  echo-vault-web:
+    build: .
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3338
+      AUTH_MODE: proxy
+      CREDENTIALS_KEY: ${CREDENTIALS_KEY:?Set CREDENTIALS_KEY}
+      CREDENTIALS_FILE: /var/lib/echo-vault-web/credentials.json
+      WEBDAV_ALLOWED_HOSTS: ${WEBDAV_ALLOWED_HOSTS:?Set WEBDAV_ALLOWED_HOSTS}
+    ports:
+      - "127.0.0.1:3338:3338"
+    volumes:
+      - echo-vault-data:/var/lib/echo-vault-web
+
+volumes:
+  echo-vault-data:
