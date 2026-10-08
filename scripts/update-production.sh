@@ -24,8 +24,10 @@ fi
 export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 if [[ -s "$NVM_DIR/nvm.sh" ]]; then
   # shellcheck disable=SC1091
+  set +u
   source "$NVM_DIR/nvm.sh"
   nvm use --silent
+  set -u
 fi
 
 for command_name in git npm pm2 curl; do

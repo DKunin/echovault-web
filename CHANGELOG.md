@@ -11,3 +11,4 @@
 - Production hostname закреплён за `music.kunini.ru` с отдельными HTML redirect и API 401 auth-потоками.
 - Добавлены регрессионные тесты auth boundary, WebDAV validation, шифрования и streaming contract.
 - Добавлен безопасный Git-based production update: fast-forward `main`, locked install, полная валидация, PM2 reload и loopback-проверка.
+- Учтена совместимость production updater с NVM при включённом Bash `nounset`.
