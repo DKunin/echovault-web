@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collectFolderTracks } from "./music-library";
+import { availableLibraryMode, collectFolderTracks } from "./music-library";
 import type { WebDavItem } from "./types";
 
 function item(path: string, isDirectory: boolean): WebDavItem {
@@ -15,6 +15,13 @@ function item(path: string, isDirectory: boolean): WebDavItem {
 }
 
 describe("remote music library", () => {
+  it("switches to a non-empty library view when a folder only contains one item type", () => {
+    expect(availableLibraryMode("folders", [item("Albums/Track.mp3", false)])).toBe("tracks");
+    expect(availableLibraryMode("tracks", [item("Albums/Live/", true)])).toBe("folders");
+    expect(availableLibraryMode("folders", [item("Albums/Live/", true), item("Albums/Track.mp3", false)])).toBe("folders");
+    expect(availableLibraryMode("favourites", [item("Albums/Track.mp3", false)])).toBe("favourites");
+  });
+
   it("collects a folder recursively while preserving WebDAV order and removing duplicates", async () => {
     const listings: Record<string, WebDavItem[]> = {
       "Albums/": [item("Albums/One.mp3", false), item("Albums/Live/", true)],

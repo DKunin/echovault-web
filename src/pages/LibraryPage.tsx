@@ -2,11 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowDownUp, ChevronRight, Home, Play, Search, Shuffle, X } from "lucide-react";
 import { listWebDavItems } from "../api";
 import { TrackRow } from "../components/TrackRow";
-import { collectFolderTracks, shuffledTracks, trackFromItem } from "../music-library";
+import { availableLibraryMode, collectFolderTracks, shuffledTracks, trackFromItem } from "../music-library";
+import type { LibraryMode } from "../music-library";
 import { usePlayer } from "../state/PlayerContext";
 import type { AppSection, WebDavItem, WebDavSettings } from "../types";
-
-type LibraryMode = "folders" | "tracks" | "favourites";
 
 interface LibraryPageProps {
   settings: WebDavSettings;
@@ -40,6 +39,7 @@ export function LibraryPage({ settings, onNavigate }: LibraryPageProps) {
     try {
       const payload = await listWebDavItems(path);
       setItems(payload.items);
+      setMode((current) => availableLibraryMode(current, payload.items));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Library could not be loaded.");
     } finally {

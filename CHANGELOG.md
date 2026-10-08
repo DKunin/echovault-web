@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Добавлен fallback-режим для LG webOS 5+ и других старых TV-браузеров: совместимая Chromium 68+ сборка, безопасный `audio.play()`, необязательный Media Session API, UUID/File API fallbacks и CSS-деградация без современных viewport-функций.
+- При открытии папки Library автоматически переключается на Tracks или Folders, если текущий вид пуст, а другой содержит музыку.
 
 ## 1.1.0 — 2026-10-08
 

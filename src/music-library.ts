@@ -1,6 +1,18 @@
 import { listWebDavItems } from "./api";
 import type { Track, WebDavItem } from "./types";
 
+export type LibraryMode = "folders" | "tracks" | "favourites";
+
+export function availableLibraryMode(current: LibraryMode, items: WebDavItem[]): LibraryMode {
+  if (current === "favourites") return current;
+
+  const hasFolders = items.some((item) => item.isDirectory);
+  const hasTracks = items.some((item) => !item.isDirectory);
+  if (current === "folders" && !hasFolders && hasTracks) return "tracks";
+  if (current === "tracks" && !hasTracks && hasFolders) return "folders";
+  return current;
+}
+
 export function trackFromItem(item: WebDavItem): Track {
   const withoutExtension = item.name.replace(/\.[^.]+$/, "");
   const split = withoutExtension.split(/\s+-\s+/, 2);
