@@ -27,7 +27,7 @@ export function NowPlayingPage() {
     return (
       <section className="page">
         <header className="page-header"><h1>Now Playing</h1></header>
-        <EmptyState title="Nothing Playing" detail="Choose a track from Library or WebDAV." />
+        <EmptyState title="Nothing Playing" detail="Choose a track from Library." />
       </section>
     );
   }

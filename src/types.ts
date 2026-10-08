@@ -1,4 +1,4 @@
-export type AppSection = "library" | "now-playing" | "playlists" | "webdav" | "settings";
+export type AppSection = "library" | "now-playing" | "playlists" | "settings";
 
 export interface SessionUser {
   userId: string;

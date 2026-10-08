@@ -6,7 +6,6 @@ import { LibraryPage } from "./pages/LibraryPage";
 import { NowPlayingPage } from "./pages/NowPlayingPage";
 import { PlaylistsPage } from "./pages/PlaylistsPage";
 import { SettingsPage } from "./pages/SettingsPage";
-import { WebDavPage } from "./pages/WebDavPage";
 import type { AppSection, SessionUser, WebDavSettings } from "./types";
 
 const emptySettings: WebDavSettings = {
@@ -46,8 +45,7 @@ export default function App() {
       <main className="app-main">
         {section === "library" && <LibraryPage settings={settings} onNavigate={setSection} />}
         {section === "now-playing" && <NowPlayingPage />}
-        {section === "playlists" && <PlaylistsPage />}
-        {section === "webdav" && <WebDavPage settings={settings} onNavigate={setSection} />}
+        {section === "playlists" && <PlaylistsPage settings={settings} userId={user.userId} />}
         {section === "settings" && <SettingsPage settings={settings} user={user} onSaved={setSettings} />}
         <MiniPlayer onOpenNowPlaying={() => setSection("now-playing")} />
       </main>

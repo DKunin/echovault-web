@@ -1,6 +1,5 @@
 import {
   FolderHeart,
-  HardDrive,
   LibraryBig,
   ListMusic,
   Settings,
@@ -12,7 +11,6 @@ const navigation: Array<{ section: AppSection; label: string; icon: typeof Libra
   { section: "library", label: "Library", icon: LibraryBig },
   { section: "now-playing", label: "Now Playing", icon: SquarePlay },
   { section: "playlists", label: "Playlists", icon: FolderHeart },
-  { section: "webdav", label: "WebDAV", icon: HardDrive },
   { section: "settings", label: "Settings", icon: Settings },
 ];
 

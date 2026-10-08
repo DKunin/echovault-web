@@ -1,6 +1,6 @@
 # EchoVault Web
 
-Закрытый веб-плеер для музыки на WebDAV. Интерфейс повторяет структуру EchoVault для macOS: Library, Now Playing, Playlists, WebDAV, Settings и постоянный мини-плеер. Используются тот же логотип и тёмная визуальная система.
+Закрытый веб-плеер для удалённой музыки на WebDAV. Интерфейс повторяет структуру EchoVault для macOS: Library, Now Playing, Playlists, Settings и постоянный мини-плеер. Используются тот же логотип и тёмная визуальная система.
 
 ## Возможности
 
@@ -9,7 +9,9 @@
 - персональная WebDAV-конфигурация по стабильному `X-Auth-User-Id`;
 - AES-256-GCM шифрование WebDAV-логина и пароля на диске;
 - проверка endpoint, allowlist хостов и запрет выхода за настроенный WebDAV root;
-- просмотр папок, поиск, очередь, избранное, shuffle/repeat, seek и range-streaming;
+- единая удалённая Library без отдельного WebDAV-раздела и offline/download-интерфейса;
+- рекурсивные Play Folder и Shuffle Folder, поиск, очередь, избранное, shuffle/repeat, seek и range-streaming;
+- совместимый с iOS/macOS импорт и экспорт `.echovaultplaylist` с переносимыми WebDAV-ссылками;
 - адаптивный desktop/mobile интерфейс и Media Session metadata.
 
 Визуальный референс: [`design/echo-vault-web-concept.png`](design/echo-vault-web-concept.png).
@@ -66,6 +68,10 @@ Settings → WebDAV содержит те же обязательные данн
 При сохранении соединение проверяется `PROPFIND Depth: 0`; только после успешной проверки конфигурация шифруется и записывается. Пароль не возвращается в браузер и не попадает в URL аудиопотока.
 
 Для single-vault deployment можно один раз записать конфигурацию под служебным идентификатором `__default__` через loopback API. Она остаётся зашифрованной и доступна всем прошедшим Kunini Auth пользователям, пока конкретный пользователь не сохранит персональное переопределение.
+
+## Плейлисты
+
+Playlists импортирует и экспортирует версионированные файлы `.echovaultplaylist` формата `com.dkunin.echovault.playlist`, совместимые с EchoVault для iOS и macOS. Файл содержит порядок, отображаемые метаданные и переносимые абсолютные ссылки `webdav-track:` / `webdav-folder:`; credentials и аудиоданные не экспортируются. Импортированные плейлисты хранятся локально в браузере отдельно для каждого Kunini-пользователя.
 
 ## Маршруты
 

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
-import { ArrowDownUp, Plus, Search, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ArrowDownUp, ChevronRight, Home, Play, Search, Shuffle, X } from "lucide-react";
 import { listWebDavItems } from "../api";
-import { TrackRow, trackFromItem } from "../components/TrackRow";
+import { TrackRow } from "../components/TrackRow";
+import { collectFolderTracks, shuffledTracks, trackFromItem } from "../music-library";
 import { usePlayer } from "../state/PlayerContext";
 import type { AppSection, WebDavItem, WebDavSettings } from "../types";
 
@@ -12,8 +13,15 @@ interface LibraryPageProps {
   onNavigate: (section: AppSection) => void;
 }
 
+function parentPath(path: string): string {
+  const parts = path.replace(/\/$/, "").split("/");
+  parts.pop();
+  return parts.length ? `${parts.join("/")}/` : "";
+}
+
 export function LibraryPage({ settings, onNavigate }: LibraryPageProps) {
   const player = usePlayer();
+  const [path, setPath] = useState("");
   const [items, setItems] = useState<WebDavItem[]>([]);
   const [mode, setMode] = useState<LibraryMode>("folders");
   const [search, setSearch] = useState("");
@@ -21,15 +29,25 @@ export function LibraryPage({ settings, onNavigate }: LibraryPageProps) {
   const [descending, setDescending] = useState(false);
   const [loading, setLoading] = useState(settings.configured);
   const [error, setError] = useState<string | null>(null);
+  const [folderOperation, setFolderOperation] = useState<"play" | "shuffle" | null>(null);
+  const [folderError, setFolderError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!settings.configured) return;
     setLoading(true);
-    listWebDavItems()
-      .then((payload) => setItems(payload.items))
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Library could not be loaded."))
-      .finally(() => setLoading(false));
-  }, [settings.configured, settings.endpoint]);
+    setError(null);
+    setItems([]);
+    try {
+      const payload = await listWebDavItems(path);
+      setItems(payload.items);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Library could not be loaded.");
+    } finally {
+      setLoading(false);
+    }
+  }, [path, settings.configured]);
+
+  useEffect(() => void load(), [load, settings.endpoint]);
 
   const tracks = useMemo(() => items.filter((item) => !item.isDirectory).map(trackFromItem), [items]);
   const visibleItems = useMemo(() => {
@@ -46,10 +64,46 @@ export function LibraryPage({ settings, onNavigate }: LibraryPageProps) {
     });
   }, [items, mode, search, descending, player.favouriteIds]);
 
+  const breadcrumbParts = path.replace(/\/$/, "").split("/").filter(Boolean);
+
+  const openBreadcrumb = (index: number) => {
+    setPath(`${breadcrumbParts.slice(0, index + 1).join("/")}/`);
+    setSearch("");
+  };
+
+  const playFolder = async (shuffled: boolean) => {
+    if (!path || folderOperation) return;
+    setFolderOperation(shuffled ? "shuffle" : "play");
+    setFolderError(null);
+    try {
+      const folderTracks = await collectFolderTracks(path);
+      if (folderTracks.length === 0) throw new Error("This folder has no supported audio files.");
+      const queue = shuffled ? shuffledTracks(folderTracks) : folderTracks;
+      player.play(queue[0], queue);
+    } catch (reason) {
+      setFolderError(reason instanceof Error ? reason.message : "This folder could not be played.");
+    } finally {
+      setFolderOperation(null);
+    }
+  };
+
   return (
     <section className="page library-page">
       <header className="page-header library-header">
-        <h1>Library</h1>
+        <div className="library-title">
+          <h1>Library</h1>
+          {path && (
+            <div className="breadcrumbs" aria-label="Current folder">
+              <button type="button" onClick={() => setPath("")}><Home size={14} /> Music</button>
+              {breadcrumbParts.map((part, index) => (
+                <span key={`${part}-${index}`}>
+                  <ChevronRight size={13} />
+                  <button type="button" onClick={() => openBreadcrumb(index)}>{decodeURIComponent(part)}</button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="header-actions">
           <div className="segmented-control" aria-label="Library view">
             {(["folders", "tracks", "favourites"] as LibraryMode[]).map((value) => (
@@ -58,13 +112,10 @@ export function LibraryPage({ settings, onNavigate }: LibraryPageProps) {
               </button>
             ))}
           </div>
-          <button className="icon-button" type="button" aria-label="Reverse sort order" onClick={() => setDescending((value) => !value)}>
+          <button className="icon-button sort-button" type="button" aria-label="Reverse sort order" onClick={() => setDescending((value) => !value)}>
             <ArrowDownUp />
           </button>
-          <button className="icon-button" type="button" aria-label="Open WebDAV" onClick={() => onNavigate("webdav")}>
-            <Plus />
-          </button>
-          <button className="icon-button" type="button" aria-label="Search library" onClick={() => setShowSearch((value) => !value)}>
+          <button className="icon-button search-button" type="button" aria-label="Search library" onClick={() => setShowSearch((value) => !value)}>
             {showSearch ? <X /> : <Search />}
           </button>
         </div>
@@ -78,30 +129,56 @@ export function LibraryPage({ settings, onNavigate }: LibraryPageProps) {
       )}
 
       <div className="page-content media-list-wrap">
-        <div className="section-label">{mode[0].toUpperCase() + mode.slice(1)}</div>
         {!settings.configured ? (
           <EmptyState title="Connect a WebDAV server" detail="Add your server address and credentials before browsing music." action="Open Settings" onAction={() => onNavigate("settings")} />
-        ) : loading ? (
+        ) : loading && items.length === 0 ? (
           <div className="loading-state">Loading your library…</div>
         ) : error ? (
-          <EmptyState title="Library unavailable" detail={error} action="Open Settings" onAction={() => onNavigate("settings")} />
-        ) : visibleItems.length === 0 ? (
-          mode === "favourites" && !search ? (
-            <EmptyState title="No favourites yet" detail="Add tracks from Now Playing, then find them here." />
-          ) :
-          <EmptyState title={search ? "No matching music" : "No music in this folder"} detail={search ? "Try another title, artist, album, or folder." : "EchoVault shows supported audio files and folders."} />
+          <EmptyState title="Library unavailable" detail={error} action="Try Again" onAction={() => void load()} />
         ) : (
-          <div className="media-list">
-            {visibleItems.map((item) => (
-              <TrackRow
-                key={item.path}
-                item={item}
-                onOpenFolder={() => onNavigate("webdav")}
-                onPlay={(track) => player.play(track, tracks)}
-                onEnqueue={player.enqueue}
-              />
-            ))}
-          </div>
+          <>
+            {path && <button className="parent-row" type="button" onClick={() => setPath(parentPath(path))}>← Back to parent folder</button>}
+            <div className="directory-toolbar">
+              <div className="directory-summary">
+                <span>{items.filter((item) => item.isDirectory).length} folders</span>
+                <span>{tracks.length} tracks</span>
+              </div>
+              {path && (
+                <div className="folder-actions">
+                  <button className="button primary compact" type="button" disabled={folderOperation !== null} onClick={() => void playFolder(false)}>
+                    <Play size={16} fill="currentColor" /> {folderOperation === "play" ? "Scanning…" : "Play Folder"}
+                  </button>
+                  <button className="button secondary compact" type="button" disabled={folderOperation !== null} onClick={() => void playFolder(true)}>
+                    <Shuffle size={16} /> {folderOperation === "shuffle" ? "Scanning…" : "Shuffle Folder"}
+                  </button>
+                </div>
+              )}
+            </div>
+            {folderError && <div className="inline-error" role="alert">{folderError}</div>}
+            <div className="section-label">{mode[0].toUpperCase() + mode.slice(1)}</div>
+            {visibleItems.length === 0 ? (
+              mode === "favourites" && !search ? (
+                <EmptyState title="No favourites yet" detail="Add tracks from Now Playing, then find them here." />
+              ) : (
+                <EmptyState title={search ? "No matching music" : "No music in this view"} detail={search ? "Try another title, artist, album, or folder." : "Switch views to see this folder’s other contents."} />
+              )
+            ) : (
+              <div className="media-list">
+                {visibleItems.map((item) => (
+                  <TrackRow
+                    key={item.path}
+                    item={item}
+                    onOpenFolder={(folder) => {
+                      setPath(folder.path);
+                      setSearch("");
+                    }}
+                    onPlay={(track) => player.play(track, tracks)}
+                    onEnqueue={player.enqueue}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
     </section>
