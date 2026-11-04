@@ -7,6 +7,9 @@ const maximumArtworkBytes = 5 * 1_024 * 1_024;
 const maximumProviderResponseBytes = 5 * 1_024 * 1_024;
 const maximumMetadataEntries = 10_000;
 const maximumPendingLookups = 100;
+const maximumProviderAttempts = 3;
+const maximumSearchPages = 4;
+const temporaryProviderStatuses = new Set([429, 500, 502, 503, 504]);
 
 export type TrackMetadataSource = "filename" | "musicbrainz";
 
@@ -59,11 +62,14 @@ interface MusicBrainzRecording {
   id?: string;
   title?: string;
   score?: number;
+  disambiguation?: string;
+  "first-release-date"?: string;
   "artist-credit"?: MusicBrainzArtistCredit[];
   releases?: MusicBrainzRelease[];
 }
 
 interface MusicBrainzSearchResponse {
+  count?: number;
   recordings?: MusicBrainzRecording[];
 }
 
@@ -112,8 +118,12 @@ async function readLimitedBody(response: globalThis.Response, maximumBytes: numb
 
 function cleanTitle(value: string): string {
   return value
+    .replace(/⧸/g, "/")
     .replace(/[＂"]/g, "")
     .replace(/\s*[[(][^\])]*(?:official|music\s+video|video|audio|lyrics?|visuali[sz]er|hd|hq|4k)[^\])]*[\])]/giu, "")
+    .replace(/\s*\[cc\]\s*/giu, " ")
+    .replace(/\s+(?:ft\.?|feat\.?|featuring)\s+.+$/iu, "")
+    .replace(/\s+-\s+the\s+.+\s+show\s*\((?:19|20)\d{2}\)\s*$/iu, "")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -128,6 +138,13 @@ function cleanAlbum(value: string): string {
 
 function withoutTrackNumber(value: string): string {
   return value.replace(/^\s*(?:\d{1,3}[.\s_-]+)+/, "").trim();
+}
+
+function withoutArtistPrefix(value: string, artist: string): string {
+  const normalizedArtist = normalized(artist);
+  const separator = value.search(/[:：]/u);
+  if (separator < 0 || normalized(value.slice(0, separator)) !== normalizedArtist) return value;
+  return value.slice(separator + 1).trim();
 }
 
 export function metadataFromPath(path: string): ResolvedTrackMetadata {
@@ -149,6 +166,9 @@ export function metadataFromPath(path: string): ResolvedTrackMetadata {
   if (/^YTM-[\w-]+$/i.test(segments[0] ?? "") && segments.length >= 4) {
     artist = segments[2];
     title = segments.slice(3).join(" - ");
+  } else if (/^YTM-[\w-]+$/i.test(segments[0] ?? "") && segments.length >= 3) {
+    artist = segments[1];
+    title = withoutArtistPrefix(segments.slice(2).join(" - "), artist);
   } else if (segments.length >= 2) {
     artist = withoutTrackNumber(segments[0]);
     title = segments.slice(1).join(" - ");
@@ -211,6 +231,19 @@ function releaseYear(release: MusicBrainzRelease): number {
   return Number.isFinite(year) ? year : 9_999;
 }
 
+function recordingYear(recording: MusicBrainzRecording): number {
+  const year = Number.parseInt(recording["first-release-date"]?.slice(0, 4) ?? "", 10);
+  return Number.isFinite(year) ? year : 9_999;
+}
+
+function recordingVariantPenalty(recording: MusicBrainzRecording): number {
+  const description = normalized(`${recording.title ?? ""} ${recording.disambiguation ?? ""}`);
+  return /\b(?:acoustic|demo|edit(?:ed)?|instrumental|karaoke|live|remix(?:ed)?|version)\b/u.test(description)
+      || /\bre\s+record(?:ed|ing)?\b/u.test(description)
+    ? 100
+    : 0;
+}
+
 function retryDelay(response: globalThis.Response, attempt: number, now: number): number {
   const retryAfter = response.headers.get("retry-after")?.trim();
   if (retryAfter) {
@@ -240,12 +273,24 @@ function bestRecording(recordings: MusicBrainzRecording[], fallback: ResolvedTra
       const confidence = apiScore
         + (titleMatches ? 30 : 0)
         + (artistMatches ? 25 : 0)
-        + (release ? releaseScore(release) : 0);
-      return { recording, titleMatches, artistMatches, apiScore, confidence };
+        + (release ? releaseScore(release) : 0)
+        + (normalized(title) === normalized(fallback.title) ? 20 : 0)
+        - recordingVariantPenalty(recording);
+      return { recording, titleMatches, artistMatches, apiScore, confidence, year: recordingYear(recording) };
     })
     .filter((candidate) => candidate.apiScore >= 80 && candidate.titleMatches && candidate.artistMatches)
-    .sort((left, right) => right.confidence - left.confidence);
+    .sort((left, right) => right.confidence - left.confidence || left.year - right.year);
   return candidates[0]?.recording ?? null;
+}
+
+function isPreferredRecording(recording: MusicBrainzRecording): boolean {
+  const release = bestRelease(recording);
+  const group = release?.["release-group"];
+  const secondaryTypes = group?.["secondary-types"] ?? [];
+  return release?.status === "Official"
+    && ["Album", "EP", "Single"].includes(group?.["primary-type"] ?? "")
+    && secondaryTypes.length === 0
+    && recordingVariantPenalty(recording) === 0;
 }
 
 export class MusicBrainzMetadataProvider implements TrackMetadataProvider {
@@ -256,6 +301,7 @@ export class MusicBrainzMetadataProvider implements TrackMetadataProvider {
   private readonly cache = new Map<string, CacheEntry<ResolvedTrackMetadata>>();
   private readonly pending = new Map<string, Promise<ResolvedTrackMetadata>>();
   private readonly artworkCache = new Map<string, CacheEntry<ArtworkPayload | null>>();
+  private readonly pendingArtwork = new Map<string, Promise<ArtworkPayload | null>>();
   private readonly knownReleaseGroups = new Set<string>();
   private requestQueue: Promise<void> = Promise.resolve();
   private lastRequestAt = 0;
@@ -300,53 +346,83 @@ export class MusicBrainzMetadataProvider implements TrackMetadataProvider {
     }
     const cached = this.artworkCache.get(releaseGroupId);
     if (cached && cached.expiresAt > this.now()) return cached.value;
+    const existing = this.pendingArtwork.get(releaseGroupId);
+    if (existing) return existing;
 
-    let response: globalThis.Response;
-    try {
-      response = await this.fetchImpl(`${coverArtEndpoint}${releaseGroupId}/front-500`, {
-        headers: { "User-Agent": userAgent, Accept: "image/*" },
-        redirect: "follow",
-        signal: AbortSignal.timeout(10_000),
-      });
-    } catch (error) {
-      throw new MetadataProviderError(`Cover Art Archive request failed: ${error instanceof Error ? error.message : "unknown error"}`);
-    }
-    if (response.status === 404) {
-      this.rememberArtwork(releaseGroupId, null, 24 * 60 * 60_000);
-      return null;
-    }
-    if (!response.ok) throw new MetadataProviderError(`Cover Art Archive returned HTTP ${response.status}.`);
+    const request = this.fetchArtwork(releaseGroupId)
+      .finally(() => this.pendingArtwork.delete(releaseGroupId));
+    this.pendingArtwork.set(releaseGroupId, request);
+    return request;
+  }
 
-    const finalHost = response.url ? new URL(response.url).hostname.toLowerCase() : "coverartarchive.org";
-    if (finalHost !== "coverartarchive.org" && finalHost !== "archive.org" && !finalHost.endsWith(".archive.org")) {
-      throw new MetadataProviderError("Cover Art Archive redirected to an unexpected host.");
+  private async fetchArtwork(releaseGroupId: string): Promise<ArtworkPayload | null> {
+    for (let attempt = 0; attempt < maximumProviderAttempts; attempt += 1) {
+      let response: globalThis.Response;
+      try {
+        response = await this.fetchImpl(`${coverArtEndpoint}${releaseGroupId}/front-500`, {
+          headers: { "User-Agent": userAgent, Accept: "image/*" },
+          redirect: "follow",
+          signal: AbortSignal.timeout(10_000),
+        });
+      } catch (error) {
+        if (attempt < maximumProviderAttempts - 1) {
+          await this.sleep(1_000 * (attempt + 1));
+          continue;
+        }
+        throw new MetadataProviderError(`Cover Art Archive request failed: ${error instanceof Error ? error.message : "unknown error"}`);
+      }
+      if (response.status === 404) {
+        this.rememberArtwork(releaseGroupId, null, 24 * 60 * 60_000);
+        return null;
+      }
+      if (temporaryProviderStatuses.has(response.status) && attempt < maximumProviderAttempts - 1) {
+        await this.sleep(retryDelay(response, attempt, this.now()));
+        continue;
+      }
+      if (!response.ok) throw new MetadataProviderError(`Cover Art Archive returned HTTP ${response.status}.`);
+
+      const finalHost = response.url ? new URL(response.url).hostname.toLowerCase() : "coverartarchive.org";
+      if (finalHost !== "coverartarchive.org" && finalHost !== "archive.org" && !finalHost.endsWith(".archive.org")) {
+        throw new MetadataProviderError("Cover Art Archive redirected to an unexpected host.");
+      }
+      const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+      if (!contentType.startsWith("image/")) {
+        throw new MetadataProviderError("Cover Art Archive returned an invalid image.");
+      }
+      const bytes = await readLimitedBody(response, maximumArtworkBytes);
+      const artwork = {
+        bytes,
+        contentType,
+        etag: response.headers.get("etag"),
+        lastModified: response.headers.get("last-modified"),
+      };
+      this.rememberArtwork(releaseGroupId, artwork, 7 * 24 * 60 * 60_000);
+      return artwork;
     }
-    const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
-    if (!contentType.startsWith("image/")) {
-      throw new MetadataProviderError("Cover Art Archive returned an invalid image.");
-    }
-    const bytes = await readLimitedBody(response, maximumArtworkBytes);
-    const artwork = {
-      bytes,
-      contentType,
-      etag: response.headers.get("etag"),
-      lastModified: response.headers.get("last-modified"),
-    };
-    this.rememberArtwork(releaseGroupId, artwork, 7 * 24 * 60 * 60_000);
-    return artwork;
+    throw new MetadataProviderError("Cover Art Archive is temporarily unavailable.");
   }
 
   private async resolve(fallback: ResolvedTrackMetadata): Promise<ResolvedTrackMetadata> {
     if (fallback.artist === "Unknown Artist") return fallback;
-    const query = `recording:${lucenePhrase(fallback.title)} AND artist:${lucenePhrase(fallback.artist)}`;
+    const query = `recording:${lucenePhrase(fallback.title)} AND artist:${lucenePhrase(fallback.artist)} AND status:official`;
     const url = new URL(musicBrainzEndpoint);
     url.searchParams.set("query", query);
     url.searchParams.set("fmt", "json");
-    url.searchParams.set("limit", "25");
+    url.searchParams.set("limit", "100");
 
-    const payload = await this.requestMusicBrainz(url);
+    const recordings: MusicBrainzRecording[] = [];
+    let recording: MusicBrainzRecording | null = null;
+    for (let page = 0; page < maximumSearchPages; page += 1) {
+      const offset = page * 100;
+      if (offset > 0) url.searchParams.set("offset", String(offset));
+      const payload = await this.requestMusicBrainz(url);
+      const pageRecordings = Array.isArray(payload.recordings) ? payload.recordings : [];
+      recordings.push(...pageRecordings);
+      recording = bestRecording(recordings, fallback);
+      if (!recording || isPreferredRecording(recording)) break;
+      if (!Number.isFinite(payload.count) || Number(payload.count) <= offset + pageRecordings.length) break;
+    }
 
-    const recording = bestRecording(Array.isArray(payload.recordings) ? payload.recordings : [], fallback);
     if (!recording?.title) return fallback;
     const release = bestRelease(recording);
     const group = release?.["release-group"];
@@ -373,12 +449,12 @@ export class MusicBrainzMetadataProvider implements TrackMetadataProvider {
   }
 
   private async requestMusicBrainz(url: URL): Promise<MusicBrainzSearchResponse> {
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    for (let attempt = 0; attempt < maximumProviderAttempts; attempt += 1) {
       const response = await this.scheduledRequest(() => this.fetchImpl(url, {
         headers: { "User-Agent": userAgent, Accept: "application/json" },
         signal: AbortSignal.timeout(10_000),
       }));
-      if (response.status === 503 && attempt < 2) {
+      if (temporaryProviderStatuses.has(response.status) && attempt < maximumProviderAttempts - 1) {
         await this.sleep(retryDelay(response, attempt, this.now()));
         continue;
       }
