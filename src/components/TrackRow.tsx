@@ -1,16 +1,18 @@
 import { Folder, MoreHorizontal, Music2, Play } from "lucide-react";
 import { trackFromItem } from "../music-library";
 import type { Track, WebDavItem } from "../types";
+import { ArtworkImage } from "./ArtworkImage";
 
 interface TrackRowProps {
   item: WebDavItem;
+  track?: Track;
   onOpenFolder?: (item: WebDavItem) => void;
   onPlay?: (track: Track) => void;
   onEnqueue?: (track: Track) => void;
 }
 
-export function TrackRow({ item, onOpenFolder, onPlay, onEnqueue }: TrackRowProps) {
-  const track = item.isDirectory ? null : trackFromItem(item);
+export function TrackRow({ item, track: providedTrack, onOpenFolder, onPlay, onEnqueue }: TrackRowProps) {
+  const track = item.isDirectory ? null : providedTrack ?? trackFromItem(item);
   return (
     <div className="media-row">
       <button
@@ -19,7 +21,11 @@ export function TrackRow({ item, onOpenFolder, onPlay, onEnqueue }: TrackRowProp
         onClick={() => (item.isDirectory ? onOpenFolder?.(item) : track && onPlay?.(track))}
       >
         <span className={item.isDirectory ? "media-art folder" : "media-art"}>
-          {item.isDirectory ? <Folder fill="currentColor" /> : <Music2 />}
+          {item.isDirectory
+            ? <Folder fill="currentColor" />
+            : track?.artworkUrl
+              ? <ArtworkImage src={track.artworkUrl} alt="" />
+              : <Music2 />}
           {!item.isDirectory && <span className="row-play"><Play size={16} fill="currentColor" /></span>}
         </span>
         <span className="media-copy">

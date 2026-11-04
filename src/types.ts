@@ -29,4 +29,16 @@ export interface Track {
   artist: string;
   album: string;
   path: string;
+  artworkUrl?: string | null;
+  metadataSource?: "filename" | "musicbrainz";
+  metadataResolved?: boolean;
+}
+
+export interface TrackMetadata {
+  path: string;
+  title: string;
+  artist: string;
+  album: string;
+  artworkUrl: string | null;
+  source: "filename" | "musicbrainz";
 }

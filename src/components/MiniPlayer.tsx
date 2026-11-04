@@ -1,5 +1,6 @@
 import { ListMusic, Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import { usePlayer } from "../state/PlayerContext";
+import { ArtworkImage } from "./ArtworkImage";
 
 interface MiniPlayerProps {
   onOpenNowPlaying: () => void;
@@ -12,7 +13,7 @@ export function MiniPlayer({ onOpenNowPlaying }: MiniPlayerProps) {
   return (
     <div className="mini-player" aria-label="Current playback">
       <button className="mini-identity" type="button" onClick={onOpenNowPlaying}>
-        <img src="/app-logo.png" alt="" />
+        <ArtworkImage src={player.currentTrack.artworkUrl} alt="" />
         <span>
           <strong>{player.currentTrack.title}</strong>
           <small>{player.currentTrack.artist}</small>

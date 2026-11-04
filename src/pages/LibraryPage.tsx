@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowDownUp, ChevronRight, Home, Play, Search, Shuffle, X } from "lucide-react";
-import { listWebDavItems } from "../api";
+import { getTrackMetadata, listWebDavItems } from "../api";
 import { TrackRow } from "../components/TrackRow";
 import { availableLibraryMode, collectFolderTracks, shuffledTracks, trackFromItem } from "../music-library";
 import type { LibraryMode } from "../music-library";
 import { usePlayer } from "../state/PlayerContext";
-import type { AppSection, WebDavItem, WebDavSettings } from "../types";
+import type { AppSection, TrackMetadata, WebDavItem, WebDavSettings } from "../types";
 
 interface LibraryPageProps {
   settings: WebDavSettings;
@@ -30,6 +30,7 @@ export function LibraryPage({ settings, onNavigate }: LibraryPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [folderOperation, setFolderOperation] = useState<"play" | "shuffle" | null>(null);
   const [folderError, setFolderError] = useState<string | null>(null);
+  const [metadataByPath, setMetadataByPath] = useState<Record<string, TrackMetadata>>({});
 
   const load = useCallback(async () => {
     if (!settings.configured) return;
@@ -49,20 +50,47 @@ export function LibraryPage({ settings, onNavigate }: LibraryPageProps) {
 
   useEffect(() => void load(), [load, settings.endpoint]);
 
-  const tracks = useMemo(() => items.filter((item) => !item.isDirectory).map(trackFromItem), [items]);
+  useEffect(() => {
+    let active = true;
+    const trackItems = items.filter((item) => !item.isDirectory);
+    const enrich = async () => {
+      for (const item of trackItems) {
+        if (!active) return;
+        try {
+          const metadata = await getTrackMetadata(item.path);
+          if (!active) return;
+          setMetadataByPath((current) => current[item.path] ? current : { ...current, [item.path]: metadata });
+        } catch {
+          // Filename metadata remains usable when the optional public provider is unavailable.
+        }
+      }
+    };
+    void enrich();
+    return () => { active = false; };
+  }, [items]);
+
+  const tracks = useMemo(
+    () => items.filter((item) => !item.isDirectory).map((item) => trackFromItem(item, metadataByPath[item.path])),
+    [items, metadataByPath],
+  );
+  const trackByPath = useMemo(() => new Map(tracks.map((track) => [track.path, track])), [tracks]);
   const visibleItems = useMemo(() => {
     const lowered = search.trim().toLowerCase();
     const filtered = items.filter((item) => {
       if (mode === "folders" && !item.isDirectory) return false;
       if (mode !== "folders" && item.isDirectory) return false;
       if (mode === "favourites" && !player.favouriteIds.includes(item.path)) return false;
-      return !lowered || item.name.toLowerCase().includes(lowered);
+      const track = trackByPath.get(item.path);
+      const searchable = track ? `${track.title} ${track.artist} ${track.album} ${item.name}` : item.name;
+      return !lowered || searchable.toLowerCase().includes(lowered);
     });
     return filtered.sort((left, right) => {
-      const order = left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: "base" });
+      const leftName = trackByPath.get(left.path)?.title ?? left.name;
+      const rightName = trackByPath.get(right.path)?.title ?? right.name;
+      const order = leftName.localeCompare(rightName, undefined, { numeric: true, sensitivity: "base" });
       return descending ? -order : order;
     });
-  }, [items, mode, search, descending, player.favouriteIds]);
+  }, [items, mode, search, descending, player.favouriteIds, trackByPath]);
 
   const breadcrumbParts = path.replace(/\/$/, "").split("/").filter(Boolean);
 
@@ -168,6 +196,7 @@ export function LibraryPage({ settings, onNavigate }: LibraryPageProps) {
                   <TrackRow
                     key={item.path}
                     item={item}
+                    track={trackByPath.get(item.path)}
                     onOpenFolder={(folder) => {
                       setPath(folder.path);
                       setSearch("");

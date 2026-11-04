@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { availableLibraryMode, collectFolderTracks } from "./music-library";
-import type { WebDavItem } from "./types";
+import { availableLibraryMode, collectFolderTracks, trackFromItem } from "./music-library";
+import type { TrackMetadata, WebDavItem } from "./types";
 
 function item(path: string, isDirectory: boolean): WebDavItem {
   return {
@@ -34,5 +34,43 @@ describe("remote music library", () => {
     }));
 
     expect(tracks.map((track) => track.path)).toEqual(["Albums/One.mp3", "Albums/Live/Two.m4a"]);
+  });
+
+  it("cleans YouTube Music filenames before remote metadata arrives", () => {
+    const track = trackFromItem(item(
+      "80s Rock/YTM-3wxyN3z9PL4 - RHINO - Starship - Nothing's Gonna Stop Us Now (Official Music Video) [HD].mp3",
+      false,
+    ));
+
+    expect(track).toMatchObject({
+      title: "Nothing's Gonna Stop Us Now",
+      artist: "Starship",
+      album: "80s Rock",
+      metadataSource: "filename",
+      metadataResolved: false,
+    });
+  });
+
+  it("applies resolved metadata and artwork without changing the stable track identity", () => {
+    const source = item("Albums/Artist - Raw Name.mp3", false);
+    const metadata: TrackMetadata = {
+      path: source.path,
+      title: "Canonical Name",
+      artist: "Canonical Artist",
+      album: "Canonical Album",
+      artworkUrl: "/api/metadata/artwork/cover-id",
+      source: "musicbrainz",
+    };
+
+    expect(trackFromItem(source, metadata)).toEqual({
+      id: source.path,
+      path: source.path,
+      title: "Canonical Name",
+      artist: "Canonical Artist",
+      album: "Canonical Album",
+      artworkUrl: "/api/metadata/artwork/cover-id",
+      metadataSource: "musicbrainz",
+      metadataResolved: true,
+    });
   });
 });

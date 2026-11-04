@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { streamUrl } from "../api";
+import { getTrackMetadata, streamUrl } from "../api";
 import { browserCompatibilityMode } from "../browser-compat";
 import { requestPlayback, updateMediaSessionMetadata } from "../media-compat";
 import type { Track } from "../types";
@@ -66,12 +66,40 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     if (shouldAutoplay.current) {
       void requestPlayback(audio).catch(() => setError("Playback could not start. Try pressing Play."));
     }
+  }, [currentTrack?.path]);
+
+  useEffect(() => {
+    if (!currentTrack) return;
     updateMediaSessionMetadata({
       title: currentTrack.title,
       artist: currentTrack.artist,
       album: currentTrack.album,
-      artwork: [{ src: "/app-logo.png", sizes: "1200x1200", type: "image/png" }],
+      artwork: currentTrack.artworkUrl
+        ? [{ src: currentTrack.artworkUrl, sizes: "500x500" }]
+        : [{ src: "/app-logo.png", sizes: "1200x1200", type: "image/png" }],
     }, browserCompatibilityMode() === "modern");
+  }, [currentTrack?.title, currentTrack?.artist, currentTrack?.album, currentTrack?.artworkUrl]);
+
+  useEffect(() => {
+    if (!currentTrack || currentTrack.metadataResolved) return;
+    let active = true;
+    void getTrackMetadata(currentTrack.path)
+      .then((metadata) => {
+        if (!active) return;
+        setQueue((current) => current.map((track) => track.id === currentTrack.id
+          ? {
+              ...track,
+              title: metadata.title,
+              artist: metadata.artist,
+              album: metadata.album,
+              artworkUrl: metadata.artworkUrl,
+              metadataSource: metadata.source,
+              metadataResolved: true,
+            }
+          : track));
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
   }, [currentTrack]);
 
   useEffect(() => {

@@ -60,7 +60,7 @@ export function SettingsPage({ settings, user }: SettingsPageProps) {
               <h2>EchoVault</h2>
               <p>Version 1.0.0</p>
               <span><CheckCircle2 size={17} /> Private WebDAV playback enabled</span>
-              <small>A web music library and WebDAV player.</small>
+              <small>Track metadata by MusicBrainz. Artwork by Cover Art Archive.</small>
             </div>
           )}
         </div>

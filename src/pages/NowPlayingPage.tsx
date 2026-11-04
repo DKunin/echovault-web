@@ -13,6 +13,7 @@ import {
 import { useState } from "react";
 import { usePlayer } from "../state/PlayerContext";
 import { EmptyState } from "./LibraryPage";
+import { ArtworkImage } from "../components/ArtworkImage";
 
 function formatTime(seconds: number): string {
   if (!Number.isFinite(seconds)) return "0:00";
@@ -48,7 +49,9 @@ export function NowPlayingPage() {
         </div>
       </header>
       <div className="now-playing-content">
-        <div className="hero-artwork"><img src="/app-logo.png" alt="EchoVault artwork" /></div>
+        <div className="hero-artwork">
+          <ArtworkImage src={player.currentTrack.artworkUrl} alt={`${player.currentTrack.album} cover`} />
+        </div>
         <div className="player-detail">
           <p className="eyebrow">NOW PLAYING</p>
           <h2>{player.currentTrack.title}</h2>

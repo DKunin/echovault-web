@@ -10,6 +10,8 @@
 - AES-256-GCM шифрование WebDAV-логина и пароля на диске;
 - прямое server-side подключение только к `https://webdav.kunini.ru/music/` и запрет выхода за WebDAV root;
 - единая удалённая Library без отдельного WebDAV-раздела и offline/download-интерфейса;
+- автоматическая очистка имён файлов и фоновое обогащение названий, исполнителей и альбомов через MusicBrainz;
+- обложки альбомов из Cover Art Archive через same-origin proxy без ослабления CSP;
 - рекурсивные Play Folder и Shuffle Folder, поиск, очередь, избранное, shuffle/repeat, seek и range-streaming;
 - совместимый с iOS/macOS импорт и экспорт `.echovaultplaylist` с переносимыми WebDAV-ссылками;
 - адаптивный desktop/mobile интерфейс и Media Session metadata.
@@ -67,6 +69,12 @@ Settings → WebDAV показывает состояние единого по�
 
 Playlists импортирует и экспортирует версионированные файлы `.echovaultplaylist` формата `com.dkunin.echovault.playlist`, совместимые с EchoVault для iOS и macOS. Файл содержит порядок, отображаемые метаданные и переносимые абсолютные ссылки `webdav-track:` / `webdav-folder:`; credentials и аудиоданные не экспортируются. Импортированные плейлисты хранятся локально в браузере отдельно для каждого Kunini-пользователя.
 
+## Метаданные
+
+Названия файлов сначала очищаются локально, включая формат `YTM-… - channel - artist - title`. Затем backend последовательно запрашивает MusicBrainz с обязательным идентифицирующим `User-Agent`, соблюдает лимит не чаще одного запроса в 1,1 секунды и кеширует успешные результаты на 30 дней. Применяются только совпадения с высокой уверенностью по названию и исполнителю; при ошибке или сомнительном результате сохраняется безопасный filename fallback.
+
+Для найденного release group обложка размером 500 px загружается из Cover Art Archive через защищённый маршрут EchoVault. Браузер не подключается к сторонним origin напрямую. MusicBrainz получает только очищенные название и исполнителя, выведенные из имени файла; WebDAV credentials, URL потока и Kunini identity наружу не передаются.
+
 ## Маршруты
 
 Все маршруты защищены единым auth middleware, включая статические файлы.
@@ -78,6 +86,8 @@ Playlists импортирует и экспортирует версионир�
 | `PUT /api/settings/webdav` | проверка и сохранение WebDAV connection |
 | `GET /api/webdav/items?path=` | `PROPFIND` папки внутри root |
 | `GET /api/webdav/stream?path=` | поток аудио с поддержкой `Range` |
+| `GET /api/metadata/track?path=` | нормализованные MusicBrainz metadata с filename fallback |
+| `GET /api/metadata/artwork/:releaseGroupId` | ограниченный proxy обложки Cover Art Archive |
 
 ## Проверка
 

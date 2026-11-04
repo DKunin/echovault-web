@@ -3,6 +3,12 @@ import express, { type NextFunction, type Request, type Response } from "express
 import { requireAuthentication } from "./auth.js";
 import type { ServerConfig } from "./config.js";
 import type { CredentialStore } from "./credential-store.js";
+import {
+  MetadataInputError,
+  MetadataProviderError,
+  MusicBrainzMetadataProvider,
+  type TrackMetadataProvider,
+} from "./music-metadata.js";
 import type { AuthenticatedRequest, WebDavCredentials } from "./types.js";
 import { WebDavConfigurationError, normalizeWebDavCredentials } from "./webdav-config.js";
 import { WebDavClient, WebDavRequestError } from "./webdav-client.js";
@@ -10,6 +16,7 @@ import { WebDavClient, WebDavRequestError } from "./webdav-client.js";
 export interface AppDependencies {
   config: ServerConfig;
   credentials: CredentialStore;
+  metadata?: TrackMetadataProvider;
   attachFrontend?: (app: express.Express) => Promise<void>;
 }
 
@@ -40,6 +47,7 @@ async function sharedCredentials(store: CredentialStore, endpoint: string) {
 
 export async function createApp(dependencies: AppDependencies): Promise<express.Express> {
   const app = express();
+  const metadata = dependencies.metadata ?? new MusicBrainzMetadataProvider();
   app.disable("x-powered-by");
 
   app.use((request, response, next) => {
@@ -159,6 +167,43 @@ export async function createApp(dependencies: AppDependencies): Promise<express.
     }
   });
 
+  app.get("/api/metadata/track", async (request, response, next) => {
+    try {
+      const path = typeof request.query.path === "string" ? request.query.path : "";
+      const resolved = await metadata.lookup(path);
+      response.json({
+        path: resolved.path,
+        title: resolved.title,
+        artist: resolved.artist,
+        album: resolved.album,
+        source: resolved.source,
+        artworkUrl: resolved.releaseGroupId
+          ? `/api/metadata/artwork/${encodeURIComponent(resolved.releaseGroupId)}`
+          : null,
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get("/api/metadata/artwork/:releaseGroupId", async (request, response, next) => {
+    try {
+      const artwork = await metadata.artwork(request.params.releaseGroupId);
+      if (!artwork) {
+        response.status(404).end();
+        return;
+      }
+      response.setHeader("Content-Type", artwork.contentType);
+      response.setHeader("Content-Length", String(artwork.bytes.length));
+      response.setHeader("Cache-Control", "private, max-age=604800, immutable");
+      if (artwork.etag) response.setHeader("ETag", artwork.etag);
+      if (artwork.lastModified) response.setHeader("Last-Modified", artwork.lastModified);
+      response.send(artwork.bytes);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.use("/api", (_request, response) => {
     response.status(404).json({ error: "API route not found." });
   });
@@ -173,6 +218,14 @@ export async function createApp(dependencies: AppDependencies): Promise<express.
     if (error instanceof WebDavRequestError) {
       const status = error.status >= 400 && error.status < 500 ? error.status : 502;
       response.status(status).json({ error: error.message });
+      return;
+    }
+    if (error instanceof MetadataInputError) {
+      response.status(400).json({ error: error.message });
+      return;
+    }
+    if (error instanceof MetadataProviderError) {
+      response.status(502).json({ error: error.message });
       return;
     }
     console.error(error);

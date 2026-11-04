@@ -1,5 +1,5 @@
 import { listWebDavItems } from "./api";
-import type { Track, WebDavItem } from "./types";
+import type { Track, TrackMetadata, WebDavItem } from "./types";
 
 export type LibraryMode = "folders" | "tracks" | "favourites";
 
@@ -13,17 +13,40 @@ export function availableLibraryMode(current: LibraryMode, items: WebDavItem[]):
   return current;
 }
 
-export function trackFromItem(item: WebDavItem): Track {
+function filenameMetadata(item: WebDavItem): Pick<Track, "title" | "artist" | "album"> {
   const withoutExtension = item.name.replace(/\.[^.]+$/, "");
-  const split = withoutExtension.split(/\s+-\s+/, 2);
+  const segments = withoutExtension.split(/\s+-\s+/).map((part) => part.trim()).filter(Boolean);
   const pathParts = item.path.split("/").filter(Boolean);
   const parent = pathParts[pathParts.length - 2];
+  const isYouTubeMusicName = /^YTM-[\w-]+$/i.test(segments[0] ?? "") && segments.length >= 4;
+  const title = isYouTubeMusicName
+    ? segments.slice(3).join(" - ")
+    : segments.length >= 2
+      ? segments.slice(1).join(" - ")
+      : withoutExtension;
+  const artist = isYouTubeMusicName ? segments[2] : segments.length >= 2 ? segments[0] : "Unknown Artist";
+  return {
+    title: title
+      .replace(/[＂"]/g, "")
+      .replace(/\s*[[(][^\])]*(?:official|music\s+video|video|audio|lyrics?|visuali[sz]er|hd|hq|4k)[^\])]*[\])]/giu, "")
+      .replace(/\s+/g, " ")
+      .trim(),
+    artist,
+    album: parent ? decodeURIComponent(parent) : "WebDAV",
+  };
+}
+
+export function trackFromItem(item: WebDavItem, metadata?: TrackMetadata): Track {
+  const fallback = filenameMetadata(item);
   return {
     id: item.path,
-    title: split.length === 2 ? split[1] : withoutExtension,
-    artist: split.length === 2 ? split[0] : "Unknown Artist",
-    album: parent ? decodeURIComponent(parent) : "WebDAV",
+    title: metadata?.title ?? fallback.title,
+    artist: metadata?.artist ?? fallback.artist,
+    album: metadata?.album ?? fallback.album,
     path: item.path,
+    artworkUrl: metadata?.artworkUrl ?? null,
+    metadataSource: metadata?.source ?? "filename",
+    metadataResolved: Boolean(metadata),
   };
 }
 

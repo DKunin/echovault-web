@@ -1,4 +1,4 @@
-import type { SessionUser, WebDavItem, WebDavSettings } from "./types";
+import type { SessionUser, TrackMetadata, WebDavItem, WebDavSettings } from "./types";
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
@@ -29,4 +29,23 @@ export function listWebDavItems(path = ""): Promise<{ path: string; items: WebDa
 
 export function streamUrl(path: string): string {
   return `/api/webdav/stream?path=${encodeURIComponent(path)}`;
+}
+
+const metadataRequests = new Map<string, Promise<TrackMetadata>>();
+const maximumMetadataRequests = 10_000;
+
+export function getTrackMetadata(path: string): Promise<TrackMetadata> {
+  const existing = metadataRequests.get(path);
+  if (existing) return existing;
+  const pending = api<TrackMetadata>(`/api/metadata/track?path=${encodeURIComponent(path)}`)
+    .catch((error) => {
+      metadataRequests.delete(path);
+      throw error;
+    });
+  if (metadataRequests.size >= maximumMetadataRequests) {
+    const oldestPath = metadataRequests.keys().next().value as string | undefined;
+    if (oldestPath) metadataRequests.delete(oldestPath);
+  }
+  metadataRequests.set(path, pending);
+  return pending;
 }
