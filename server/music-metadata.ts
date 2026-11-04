@@ -506,10 +506,19 @@ export class MusicBrainzMetadataProvider implements TrackMetadataProvider {
 
   private async requestMusicBrainz<T = MusicBrainzSearchResponse>(url: URL): Promise<T> {
     for (let attempt = 0; attempt < maximumProviderAttempts; attempt += 1) {
-      const response = await this.scheduledRequest(() => this.fetchImpl(url, {
-        headers: { "User-Agent": userAgent, Accept: "application/json" },
-        signal: AbortSignal.timeout(10_000),
-      }));
+      let response: globalThis.Response;
+      try {
+        response = await this.scheduledRequest(() => this.fetchImpl(url, {
+          headers: { "User-Agent": userAgent, Accept: "application/json" },
+          signal: AbortSignal.timeout(10_000),
+        }));
+      } catch (error) {
+        if (attempt < maximumProviderAttempts - 1) {
+          await this.sleep(1_000 * (attempt + 1));
+          continue;
+        }
+        throw new MetadataProviderError(`MusicBrainz request failed: ${error instanceof Error ? error.message : "unknown error"}`);
+      }
       if (temporaryProviderStatuses.has(response.status) && attempt < maximumProviderAttempts - 1) {
         await this.sleep(retryDelay(response, attempt, this.now()));
         continue;
