@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { type Dispatch, type SetStateAction, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Download, ListMusic, Play, Shuffle, Upload } from "lucide-react";
 import { readCompatibleFileText } from "../browser-compat";
 import { shuffledTracks } from "../music-library";
@@ -19,6 +19,8 @@ import type { WebDavSettings } from "../types";
 interface PlaylistsPageProps {
   settings: WebDavSettings;
   userId: string;
+  selectedID: string | null;
+  setSelectedID: Dispatch<SetStateAction<string | null>>;
 }
 
 function storedPlaylists(
@@ -68,13 +70,12 @@ function downloadPlaylist(playlist: MusicPlaylist) {
   URL.revokeObjectURL(url);
 }
 
-export function PlaylistsPage({ settings, userId }: PlaylistsPageProps) {
+export function PlaylistsPage({ settings, userId, selectedID, setSelectedID }: PlaylistsPageProps) {
   const player = usePlayer();
   const storageKey = `echo-vault-playlists:${userId}`;
   const [playlists, setPlaylists] = useState<MusicPlaylist[]>(() => (
     storedPlaylists(storageKey, settings.endpoint, settings.legacyEndpoints)
   ));
-  const [selectedID, setSelectedID] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

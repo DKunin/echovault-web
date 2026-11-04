@@ -10,10 +10,15 @@ import {
 } from "react";
 import { getTrackMetadata, streamUrl } from "../api";
 import { browserCompatibilityMode } from "../browser-compat";
+import {
+  loadPlayerSnapshot,
+  type PlayerSnapshot,
+  type RepeatMode,
+  savePlayerProgress,
+  savePlayerSnapshot,
+} from "../local-state";
 import { requestPlayback, updateMediaSessionMetadata } from "../media-compat";
 import type { Track } from "../types";
-
-type RepeatMode = "off" | "all" | "one";
 
 interface PlayerState {
   currentTrack: Track | null;
@@ -40,18 +45,25 @@ interface PlayerState {
 
 const PlayerContext = createContext<PlayerState | null>(null);
 
-export function PlayerProvider({ children }: PropsWithChildren) {
+export function PlayerProvider({ children, userId }: PropsWithChildren<{ userId: string }>) {
+  const [restored] = useState(() => loadPlayerSnapshot(userId));
   const audioRef = useRef<HTMLAudioElement>(null);
   const shouldAutoplay = useRef(false);
-  const [queue, setQueue] = useState<Track[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(-1);
+  const restoredIndex = restored.currentTrackId
+    ? restored.queue.findIndex((track) => track.id === restored.currentTrackId)
+    : -1;
+  const restoredProgress = useRef(restored.currentTrackId && restored.currentTime > 0
+    ? { trackId: restored.currentTrackId, time: restored.currentTime }
+    : null);
+  const [queue, setQueue] = useState<Track[]>(restored.queue);
+  const [currentIndex, setCurrentIndex] = useState(restoredIndex);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
+  const [currentTime, setCurrentTime] = useState(restored.currentTime);
   const [duration, setDuration] = useState(0);
-  const [volume, setVolumeState] = useState(0.72);
-  const [shuffle, setShuffle] = useState(false);
-  const [repeat, setRepeat] = useState<RepeatMode>("off");
-  const [favouriteIds, setFavouriteIds] = useState<string[]>([]);
+  const [volume, setVolumeState] = useState(restored.volume);
+  const [shuffle, setShuffle] = useState(restored.shuffle);
+  const [repeat, setRepeat] = useState<RepeatMode>(restored.repeat);
+  const [favouriteIds, setFavouriteIds] = useState<string[]>(restored.favouriteIds);
   const [error, setError] = useState<string | null>(null);
   const currentTrack = currentIndex >= 0 ? queue[currentIndex] ?? null : null;
 
@@ -60,7 +72,8 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     if (!audio || !currentTrack) return;
     audio.src = streamUrl(currentTrack.path);
     audio.load();
-    setCurrentTime(0);
+    const pending = restoredProgress.current;
+    setCurrentTime(pending?.trackId === currentTrack.id ? pending.time : 0);
     setDuration(0);
     setError(null);
     if (shouldAutoplay.current) {
@@ -106,10 +119,51 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     if (audioRef.current) audioRef.current.volume = volume;
   }, [volume]);
 
+  const persistedSnapshot: PlayerSnapshot = {
+    queue,
+    currentTrackId: currentTrack?.id ?? null,
+    currentTime,
+    volume,
+    shuffle,
+    repeat,
+    favouriteIds,
+  };
+  const latestSnapshot = useRef(persistedSnapshot);
+  latestSnapshot.current = persistedSnapshot;
+  const progressBucket = Math.floor(currentTime / 5);
+
+  useEffect(() => {
+    savePlayerSnapshot(userId, latestSnapshot.current);
+  }, [currentTrack?.id, favouriteIds, queue, repeat, shuffle, userId, volume]);
+
+  useEffect(() => {
+    savePlayerProgress(userId, currentTrack?.id ?? null, currentTime);
+  }, [currentTrack?.id, isPlaying, progressBucket, userId]);
+
+  useEffect(() => {
+    const flush = () => savePlayerProgress(
+      userId,
+      latestSnapshot.current.currentTrackId,
+      latestSnapshot.current.currentTime,
+    );
+    const flushWhenHidden = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", flushWhenHidden);
+    return () => {
+      flush();
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", flushWhenHidden);
+    };
+  }, [userId]);
+
   const play = useCallback((track: Track, nextQueue?: Track[]) => {
     const resolvedQueue = nextQueue?.length ? nextQueue : [track];
     const index = resolvedQueue.findIndex((candidate) => candidate.id === track.id);
+    restoredProgress.current = null;
     shouldAutoplay.current = true;
+    setCurrentTime(0);
     setQueue(resolvedQueue);
     setCurrentIndex(Math.max(index, 0));
   }, []);
@@ -141,7 +195,9 @@ export function PlayerProvider({ children }: PropsWithChildren) {
   const advance = useCallback(
     (direction: 1 | -1) => {
       if (queue.length === 0) return;
+      restoredProgress.current = null;
       shouldAutoplay.current = true;
+      setCurrentTime(0);
       setCurrentIndex((index) => {
         if (shuffle && queue.length > 1) {
           let next = index;
@@ -166,6 +222,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
 
   const seek = useCallback((time: number) => {
     if (audioRef.current) audioRef.current.currentTime = time;
+    setCurrentTime(time);
   }, []);
 
   const setVolume = useCallback((value: number) => setVolumeState(Math.min(1, Math.max(0, value))), []);
@@ -229,6 +286,17 @@ export function PlayerProvider({ children }: PropsWithChildren) {
         ref={audioRef}
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
+        onLoadedMetadata={(event) => {
+          const pending = restoredProgress.current;
+          if (!pending || pending.trackId !== currentTrack?.id) return;
+          const maximum = Number.isFinite(event.currentTarget.duration)
+            ? Math.max(0, event.currentTarget.duration - 0.25)
+            : pending.time;
+          const restoredTime = Math.min(pending.time, maximum);
+          event.currentTarget.currentTime = restoredTime;
+          setCurrentTime(restoredTime);
+          restoredProgress.current = null;
+        }}
         onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
         onDurationChange={(event) => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
         onError={() => setError("This track could not be loaded from WebDAV.")}

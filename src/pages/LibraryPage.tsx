@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowDownUp, ChevronRight, Home, Play, Search, Shuffle, X } from "lucide-react";
 import { getTrackMetadata, listWebDavItems } from "../api";
 import { TrackRow } from "../components/TrackRow";
@@ -9,6 +9,10 @@ import type { AppSection, TrackMetadata, WebDavItem, WebDavSettings } from "../t
 
 interface LibraryPageProps {
   settings: WebDavSettings;
+  path: string;
+  setPath: Dispatch<SetStateAction<string>>;
+  mode: LibraryMode;
+  setMode: Dispatch<SetStateAction<LibraryMode>>;
   onNavigate: (section: AppSection) => void;
 }
 
@@ -18,11 +22,9 @@ function parentPath(path: string): string {
   return parts.length ? `${parts.join("/")}/` : "";
 }
 
-export function LibraryPage({ settings, onNavigate }: LibraryPageProps) {
+export function LibraryPage({ settings, path, setPath, mode, setMode, onNavigate }: LibraryPageProps) {
   const player = usePlayer();
-  const [path, setPath] = useState("");
   const [items, setItems] = useState<WebDavItem[]>([]);
-  const [mode, setMode] = useState<LibraryMode>("folders");
   const [search, setSearch] = useState("");
   const [showSearch, setShowSearch] = useState(false);
   const [descending, setDescending] = useState(false);
