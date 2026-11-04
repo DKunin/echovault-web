@@ -211,6 +211,17 @@ function releaseYear(release: MusicBrainzRelease): number {
   return Number.isFinite(year) ? year : 9_999;
 }
 
+function retryDelay(response: globalThis.Response, attempt: number, now: number): number {
+  const retryAfter = response.headers.get("retry-after")?.trim();
+  if (retryAfter) {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds)) return Math.min(10_000, Math.max(1_000, seconds * 1_000));
+    const date = Date.parse(retryAfter);
+    if (Number.isFinite(date)) return Math.min(10_000, Math.max(1_000, date - now));
+  }
+  return Math.min(10_000, 2_000 * (attempt + 1));
+}
+
 function bestRelease(recording: MusicBrainzRecording): MusicBrainzRelease | null {
   return [...(recording.releases ?? [])]
     .filter((release) => uuidPattern.test(release["release-group"]?.id ?? ""))
@@ -333,19 +344,7 @@ export class MusicBrainzMetadataProvider implements TrackMetadataProvider {
     url.searchParams.set("fmt", "json");
     url.searchParams.set("limit", "25");
 
-    const payload = await this.scheduledRequest(async () => {
-      const response = await this.fetchImpl(url, {
-        headers: { "User-Agent": userAgent, Accept: "application/json" },
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (!response.ok) throw new MetadataProviderError(`MusicBrainz returned HTTP ${response.status}.`);
-      const body = await readLimitedBody(response, maximumProviderResponseBytes);
-      try {
-        return JSON.parse(body.toString("utf8")) as MusicBrainzSearchResponse;
-      } catch {
-        throw new MetadataProviderError("MusicBrainz returned invalid JSON.");
-      }
-    });
+    const payload = await this.requestMusicBrainz(url);
 
     const recording = bestRecording(Array.isArray(payload.recordings) ? payload.recordings : [], fallback);
     if (!recording?.title) return fallback;
@@ -371,6 +370,27 @@ export class MusicBrainzMetadataProvider implements TrackMetadataProvider {
     });
     this.requestQueue = run.then(() => undefined, () => undefined);
     return run;
+  }
+
+  private async requestMusicBrainz(url: URL): Promise<MusicBrainzSearchResponse> {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const response = await this.scheduledRequest(() => this.fetchImpl(url, {
+        headers: { "User-Agent": userAgent, Accept: "application/json" },
+        signal: AbortSignal.timeout(10_000),
+      }));
+      if (response.status === 503 && attempt < 2) {
+        await this.sleep(retryDelay(response, attempt, this.now()));
+        continue;
+      }
+      if (!response.ok) throw new MetadataProviderError(`MusicBrainz returned HTTP ${response.status}.`);
+      const body = await readLimitedBody(response, maximumProviderResponseBytes);
+      try {
+        return JSON.parse(body.toString("utf8")) as MusicBrainzSearchResponse;
+      } catch {
+        throw new MetadataProviderError("MusicBrainz returned invalid JSON.");
+      }
+    }
+    throw new MetadataProviderError("MusicBrainz is temporarily unavailable.");
   }
 
   private rememberArtwork(releaseGroupId: string, value: ArtworkPayload | null, ttl: number): void {

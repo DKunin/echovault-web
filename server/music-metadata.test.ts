@@ -124,6 +124,24 @@ describe("MusicBrainz metadata provider", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("retries temporary MusicBrainz throttling with bounded backoff", async () => {
+    const waits: number[] = [];
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response("busy", { status: 503, headers: { "Retry-After": "1" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ recordings: [] }), { status: 200 }));
+    const provider = new MusicBrainzMetadataProvider({
+      fetch: fetchMock,
+      minimumIntervalMs: 0,
+      sleep: async (milliseconds) => { waits.push(milliseconds); },
+    });
+
+    const result = await provider.lookup("Music/Artist - Song.mp3");
+
+    expect(result.source).toBe("filename");
+    expect(waits).toEqual([1_000]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("proxies only bounded image responses from Cover Art Archive", async () => {
     const fetchMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(new Response(JSON.stringify({
