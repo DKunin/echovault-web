@@ -11,9 +11,8 @@ import type { AppSection, SessionUser, WebDavSettings } from "./types";
 const emptySettings: WebDavSettings = {
   configured: false,
   endpoint: "",
-  username: "",
-  hasPassword: false,
-  allowsInsecureHttp: false,
+  managed: true,
+  legacyEndpoints: [],
 };
 
 export default function App() {
@@ -46,7 +45,7 @@ export default function App() {
         {section === "library" && <LibraryPage settings={settings} onNavigate={setSection} />}
         {section === "now-playing" && <NowPlayingPage />}
         {section === "playlists" && <PlaylistsPage settings={settings} userId={user.userId} />}
-        {section === "settings" && <SettingsPage settings={settings} user={user} onSaved={setSettings} />}
+        {section === "settings" && <SettingsPage settings={settings} user={user} />}
         <MiniPlayer onOpenNowPlaying={() => setSection("now-playing")} />
       </main>
       <MobileNavigation section={section} onNavigate={setSection} />

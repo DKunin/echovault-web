@@ -130,7 +130,7 @@ export function LibraryPage({ settings, onNavigate }: LibraryPageProps) {
 
       <div className="page-content media-list-wrap">
         {!settings.configured ? (
-          <EmptyState title="Connect a WebDAV server" detail="Add your server address and credentials before browsing music." action="Open Settings" onAction={() => onNavigate("settings")} />
+          <EmptyState title="Music access is not configured" detail="The server operator must configure the shared WebDAV profile." action="Open Settings" onAction={() => onNavigate("settings")} />
         ) : loading && items.length === 0 ? (
           <div className="loading-state">Loading your library…</div>
         ) : error ? (

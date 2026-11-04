@@ -9,6 +9,7 @@ const config: ServerConfig = {
   port: 3338,
   authMode: "proxy",
   credentialsFile: "unused",
+  webDavEndpoint: "https://webdav.kunini.ru/music/",
   allowedWebDavHosts: [],
   isProduction: false,
 };
@@ -47,7 +48,7 @@ describe("Kunini authentication boundary", () => {
   it("offers an encrypted default WebDAV connection to authenticated users", async () => {
     const credentials = new MemoryCredentialStore();
     await credentials.put("__default__", {
-      endpoint: "https://dav.example.test/music/",
+      endpoint: "http://192.0.2.10:4243/music/",
       username: "echo",
       password: "secret",
       allowsInsecureHttp: false,
@@ -62,11 +63,48 @@ describe("Kunini authentication boundary", () => {
 
     expect(response.body).toEqual({
       configured: true,
-      endpoint: "https://dav.example.test/music/",
-      username: "echo",
-      hasPassword: true,
+      endpoint: "https://webdav.kunini.ru/music/",
+      managed: true,
+      legacyEndpoints: ["http://192.0.2.10:4243/music/"],
+    });
+  });
+
+  it("ignores per-user credentials and reports only the server-managed profile", async () => {
+    const credentials = new MemoryCredentialStore();
+    await credentials.put("user-1", {
+      endpoint: "https://personal.example.test/",
+      username: "personal-user",
+      password: "personal-password",
       allowsInsecureHttp: false,
     });
+    const app = await createApp({ config, credentials });
+
+    const response = await request(app)
+      .get("/api/settings/webdav")
+      .set("X-Auth-User", "listener")
+      .set("X-Auth-User-Id", "user-1")
+      .expect(200);
+
+    expect(response.body).toEqual({
+      configured: false,
+      endpoint: "https://webdav.kunini.ru/music/",
+      managed: true,
+      legacyEndpoints: [],
+    });
+  });
+
+  it("forbids authenticated users from replacing the shared WebDAV profile", async () => {
+    const credentials = new MemoryCredentialStore();
+    const app = await createApp({ config, credentials });
+
+    await request(app)
+      .put("/api/settings/webdav")
+      .set("X-Auth-User", "listener")
+      .set("X-Auth-User-Id", "user-1")
+      .send({ username: "attacker", password: "replacement" })
+      .expect(403, { error: "The shared WebDAV profile is managed by the server operator." });
+
+    expect(await credentials.get("__default__")).toBeNull();
   });
 
   it("does not let unknown API routes fall through to the frontend", async () => {

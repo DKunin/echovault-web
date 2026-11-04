@@ -91,6 +91,25 @@ export function playlistFromTracks(name: string, tracks: Track[], endpoint: stri
   };
 }
 
+export function rebasePlaylistWebDavReferences(
+  playlist: MusicPlaylist,
+  endpoint: string,
+  legacyEndpoints: string[],
+): MusicPlaylist {
+  let changed = false;
+  const items = playlist.items.map((item) => {
+    for (const legacyEndpoint of legacyEndpoints) {
+      const path = relativePathForPlaylistItem(item, legacyEndpoint);
+      if (path === null) continue;
+      changed = true;
+      return { ...item, referenceID: portableReference(item.kind, path, endpoint) };
+    }
+    return item;
+  });
+
+  return changed ? { ...playlist, items, updatedAt: nativeDateNow() } : playlist;
+}
+
 export function encodePlaylist(playlist: MusicPlaylist): string {
   validatePlaylist(playlist);
   const contents = JSON.stringify({ format: playlistFormat, playlist, version: playlistVersion }, null, 2);

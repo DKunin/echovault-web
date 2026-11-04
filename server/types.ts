@@ -15,6 +15,7 @@ export interface WebDavCredentials {
   username: string;
   password: string;
   allowsInsecureHttp: boolean;
+  legacyEndpoints?: string[];
 }
 
 export interface WebDavItem {

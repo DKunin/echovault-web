@@ -23,11 +23,19 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unexpected server error.";
 }
 
-async function credentialsForRequest(request: Request, store: CredentialStore) {
-  return (
-    (await store.get(authenticated(request).identity.userId)) ??
-    (await store.get(defaultWebDavIdentity))
-  );
+async function sharedCredentials(store: CredentialStore, endpoint: string) {
+  const credentials = await store.get(defaultWebDavIdentity);
+  if (!credentials) return null;
+
+  const legacyEndpoints = new Set(credentials.legacyEndpoints ?? []);
+  if (credentials.endpoint !== endpoint) legacyEndpoints.add(credentials.endpoint);
+
+  return {
+    ...credentials,
+    endpoint,
+    allowsInsecureHttp: false,
+    legacyEndpoints: [...legacyEndpoints],
+  };
 }
 
 export async function createApp(dependencies: AppDependencies): Promise<express.Express> {
@@ -62,13 +70,12 @@ export async function createApp(dependencies: AppDependencies): Promise<express.
 
   app.get("/api/settings/webdav", async (request, response, next) => {
     try {
-      const settings = await credentialsForRequest(request, dependencies.credentials);
+      const settings = await sharedCredentials(dependencies.credentials, dependencies.config.webDavEndpoint);
       response.json({
         configured: Boolean(settings),
-        endpoint: settings?.endpoint ?? "",
-        username: settings?.username ?? "",
-        hasPassword: Boolean(settings?.password),
-        allowsInsecureHttp: settings?.allowsInsecureHttp ?? false,
+        endpoint: settings?.endpoint ?? dependencies.config.webDavEndpoint,
+        managed: true,
+        legacyEndpoints: settings?.legacyEndpoints ?? [],
       });
     } catch (error) {
       next(error);
@@ -78,28 +85,35 @@ export async function createApp(dependencies: AppDependencies): Promise<express.
   app.put("/api/settings/webdav", async (request, response, next) => {
     try {
       const identity = authenticated(request).identity;
-      const previous = await credentialsForRequest(request, dependencies.credentials);
+      if (identity.userId !== defaultWebDavIdentity) {
+        response.status(403).json({ error: "The shared WebDAV profile is managed by the server operator." });
+        return;
+      }
+      const previous = await sharedCredentials(dependencies.credentials, dependencies.config.webDavEndpoint);
       const input = request.body as Partial<WebDavCredentials>;
       const password = typeof input.password === "string" && input.password.length > 0
         ? input.password
         : previous?.password ?? "";
       const settings = normalizeWebDavCredentials(
         {
-          endpoint: String(input.endpoint ?? ""),
+          endpoint: dependencies.config.webDavEndpoint,
           username: String(input.username ?? ""),
           password,
-          allowsInsecureHttp: input.allowsInsecureHttp === true,
+          allowsInsecureHttp: false,
         },
         dependencies.config.allowedWebDavHosts,
       );
       await new WebDavClient(settings).checkConnection();
-      await dependencies.credentials.put(identity.userId, settings);
+      const storedSettings = {
+        ...settings,
+        legacyEndpoints: previous?.legacyEndpoints ?? [],
+      };
+      await dependencies.credentials.put(defaultWebDavIdentity, storedSettings);
       response.json({
         configured: true,
         endpoint: settings.endpoint,
-        username: settings.username,
-        hasPassword: Boolean(settings.password),
-        allowsInsecureHttp: settings.allowsInsecureHttp,
+        managed: true,
+        legacyEndpoints: storedSettings.legacyEndpoints,
       });
     } catch (error) {
       next(error);
@@ -108,7 +122,7 @@ export async function createApp(dependencies: AppDependencies): Promise<express.
 
   app.get("/api/webdav/items", async (request, response, next) => {
     try {
-      const settings = await credentialsForRequest(request, dependencies.credentials);
+      const settings = await sharedCredentials(dependencies.credentials, dependencies.config.webDavEndpoint);
       if (!settings) {
         response.status(428).json({ error: "Connect a WebDAV server in Settings first." });
         return;
@@ -122,7 +136,7 @@ export async function createApp(dependencies: AppDependencies): Promise<express.
 
   app.get("/api/webdav/stream", async (request, response, next) => {
     try {
-      const settings = await credentialsForRequest(request, dependencies.credentials);
+      const settings = await sharedCredentials(dependencies.credentials, dependencies.config.webDavEndpoint);
       if (!settings) {
         response.status(428).json({ error: "Connect a WebDAV server in Settings first." });
         return;

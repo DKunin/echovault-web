@@ -10,6 +10,7 @@ import {
   maximumPlaylistFileSize,
   type MusicPlaylist,
   playlistFromTracks,
+  rebasePlaylistWebDavReferences,
   resolvePlaylistTracks,
 } from "../playlist-document";
 import { usePlayer } from "../state/PlayerContext";
@@ -20,12 +21,16 @@ interface PlaylistsPageProps {
   userId: string;
 }
 
-function storedPlaylists(storageKey: string): MusicPlaylist[] {
+function storedPlaylists(
+  storageKey: string,
+  endpoint: string,
+  legacyEndpoints: string[],
+): MusicPlaylist[] {
   try {
     const saved = localStorage.getItem(storageKey);
     const parsed = saved ? (JSON.parse(saved) as unknown) : [];
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((playlist): playlist is MusicPlaylist => {
+    const playlists = parsed.filter((playlist): playlist is MusicPlaylist => {
       try {
         encodePlaylist(playlist as MusicPlaylist);
         return true;
@@ -33,6 +38,13 @@ function storedPlaylists(storageKey: string): MusicPlaylist[] {
         return false;
       }
     });
+    const migrated = playlists.map((playlist) => (
+      rebasePlaylistWebDavReferences(playlist, endpoint, legacyEndpoints)
+    ));
+    if (migrated.some((playlist, index) => playlist !== playlists[index])) {
+      savePlaylists(storageKey, migrated);
+    }
+    return migrated;
   } catch {
     return [];
   }
@@ -59,7 +71,9 @@ function downloadPlaylist(playlist: MusicPlaylist) {
 export function PlaylistsPage({ settings, userId }: PlaylistsPageProps) {
   const player = usePlayer();
   const storageKey = `echo-vault-playlists:${userId}`;
-  const [playlists, setPlaylists] = useState<MusicPlaylist[]>(() => storedPlaylists(storageKey));
+  const [playlists, setPlaylists] = useState<MusicPlaylist[]>(() => (
+    storedPlaylists(storageKey, settings.endpoint, settings.legacyEndpoints)
+  ));
   const [selectedID, setSelectedID] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -111,7 +125,11 @@ export function PlaylistsPage({ settings, userId }: PlaylistsPageProps) {
     try {
       if (file.size > maximumPlaylistFileSize) throw new Error("This playlist file is too large to import.");
       const parsed = decodePlaylist(await readCompatibleFileText(file));
-      const imported = importedPlaylist(parsed, playlists.map((playlist) => playlist.name));
+      const imported = rebasePlaylistWebDavReferences(
+        importedPlaylist(parsed, playlists.map((playlist) => playlist.name)),
+        settings.endpoint,
+        settings.legacyEndpoints,
+      );
       replacePlaylists([...playlists, imported]);
       setSelectedID(imported.id);
       setStatus(`“${imported.name}” imported with ${imported.items.length} items.`);

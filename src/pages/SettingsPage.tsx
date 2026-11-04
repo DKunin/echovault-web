@@ -1,16 +1,14 @@
 import { useState } from "react";
-import { CheckCircle2 } from "lucide-react";
-import { WebDavSetupForm } from "../components/WebDavSetupForm";
+import { CheckCircle2, LockKeyhole, TriangleAlert } from "lucide-react";
 import { usePlayer } from "../state/PlayerContext";
 import type { SessionUser, WebDavSettings } from "../types";
 
 interface SettingsPageProps {
   settings: WebDavSettings;
   user: SessionUser;
-  onSaved: (settings: WebDavSettings) => void;
 }
 
-export function SettingsPage({ settings, user, onSaved }: SettingsPageProps) {
+export function SettingsPage({ settings, user }: SettingsPageProps) {
   const player = usePlayer();
   const [tab, setTab] = useState<"general" | "webdav" | "about">(settings.configured ? "general" : "webdav");
   return (
@@ -46,10 +44,14 @@ export function SettingsPage({ settings, user, onSaved }: SettingsPageProps) {
           {tab === "webdav" && (
             <div className="settings-section-stack">
               <h2>Connection</h2>
-              {settings.configured && (
-                <div className="connection-status"><CheckCircle2 size={18} /><span><strong>Connected</strong>{settings.endpoint}</span></div>
-              )}
-              <WebDavSetupForm settings={settings} onSaved={onSaved} compact />
+              <div className={settings.configured ? "managed-connection" : "managed-connection unavailable"}>
+                {settings.configured ? <LockKeyhole size={22} /> : <TriangleAlert size={22} />}
+                <span>
+                  <strong>{settings.configured ? "Shared music access is ready" : "Music access is not configured"}</strong>
+                  <small>{settings.endpoint}</small>
+                  <small>WebDAV credentials are encrypted on the server and never sent to this browser.</small>
+                </span>
+              </div>
             </div>
           )}
           {tab === "about" && (

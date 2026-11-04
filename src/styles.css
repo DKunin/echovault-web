@@ -458,28 +458,12 @@ button.setting-row { cursor: pointer; }
 .toggle::after { position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: white; content: ""; transition: transform 160ms ease; }
 .toggle.on { background: var(--accent); }
 .toggle.on::after { transform: translateX(18px); }
-.connection-status { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; padding: 14px 16px; border-radius: 12px; background: rgba(48, 191, 103, 0.1); color: #72da99; }
-.connection-status span { display: grid; gap: 2px; color: var(--muted); font-size: 12px; }
-.connection-status strong { color: #86e5a8; font-size: 14px; }
-
-.webdav-form { width: calc(100% - 40px); max-width: 600px; margin: auto; padding: 30px; border: 1px solid var(--separator); border-radius: 18px; background: #18181a; }
-.webdav-form.compact { width: auto; margin: 0; padding: 22px; background: #252527; }
-.setup-heading { display: flex; align-items: center; gap: 15px; margin-bottom: 25px; }
-.setup-heading > span { display: grid; width: 48px; height: 48px; place-items: center; border-radius: 13px; background: var(--accent); }
-.setup-heading h2 { margin: 0 0 5px; font-size: 22px; }
-.setup-heading p { margin: 0; color: var(--muted); font-size: 13px; }
-.webdav-form > label, .field-pair label { display: grid; gap: 7px; margin-bottom: 16px; color: #cfcfd3; font-size: 13px; font-weight: 600; }
-.webdav-form input:not([type="checkbox"]) { height: 43px; padding: 0 12px; border: 1px solid rgba(255,255,255,.12); border-radius: 9px; outline: 0; background: #141416; color: #fff; font-size: 14px; }
-.webdav-form input:not([type="checkbox"]):focus { border-color: #6c8aff; box-shadow: 0 0 0 3px rgba(77, 120, 255, .16); }
-.field-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.switch-row { display: flex !important; align-items: center; justify-content: space-between; gap: 20px; padding: 12px 0; }
-.switch-row > span { display: grid; gap: 3px; }
-.switch-row small { color: var(--muted); font-weight: 400; }
-.switch-row input { width: 38px; height: 22px; accent-color: var(--accent); }
-.inline-warning, .form-status { display: flex; align-items: center; gap: 7px; margin: 4px 0 14px; color: var(--danger); font-size: 13px; }
-.form-status.success { color: #75d89b; }
-.form-status.error { color: #ff9a78; }
-.form-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
+.managed-connection { display: flex; align-items: flex-start; gap: 12px; padding: 18px; border: 1px solid rgba(82, 211, 132, .2); border-radius: 12px; background: rgba(48, 191, 103, .08); color: #72da99; }
+.managed-connection.unavailable { border-color: rgba(255, 154, 120, .25); background: rgba(255, 126, 82, .08); color: #ff9a78; }
+.managed-connection span { display: grid; gap: 5px; min-width: 0; }
+.managed-connection strong { color: #d8f7e3; font-size: 14px; }
+.managed-connection.unavailable strong { color: #ffd8ca; }
+.managed-connection small { overflow: hidden; color: var(--muted); font-size: 12px; text-overflow: ellipsis; }
 .about-panel { display: grid; min-height: 420px; place-content: center; justify-items: center; text-align: center; }
 .about-panel img { width: 116px; height: 116px; border-radius: 24px; }
 .about-panel h2 { margin: 16px 0 4px; font-size: 28px; }
@@ -582,8 +566,6 @@ button.setting-row { cursor: pointer; }
   .settings-content { height: calc(100% - 66px); padding: 20px 12px 160px; }
   .settings-tabs { width: 300px; }
   .settings-panel { min-height: 0; padding: 24px 12px; }
-  .field-pair { grid-template-columns: 1fr; gap: 0; }
-  .webdav-form.compact { padding: 16px; }
   .breadcrumbs { max-width: calc(100vw - 86px); }
   .directory-toolbar { align-items: flex-start; flex-direction: column; gap: 2px; margin-bottom: 12px; }
   .folder-actions { width: 100%; }

@@ -9,7 +9,7 @@ services:
       AUTH_MODE: proxy
       CREDENTIALS_KEY: ${CREDENTIALS_KEY:?Set CREDENTIALS_KEY}
       CREDENTIALS_FILE: /var/lib/echo-vault-web/credentials.json
-      WEBDAV_ALLOWED_HOSTS: ${WEBDAV_ALLOWED_HOSTS:?Set WEBDAV_ALLOWED_HOSTS}
+      WEBDAV_ALLOWED_HOSTS: ${WEBDAV_ALLOWED_HOSTS:-webdav.kunini.ru}
     ports:
       - "127.0.0.1:3338:3338"
     volumes:

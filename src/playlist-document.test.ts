@@ -5,6 +5,7 @@ import {
   importedPlaylist,
   playlistFormat,
   playlistFromTracks,
+  rebasePlaylistWebDavReferences,
   relativePathForPlaylistItem,
 } from "./playlist-document";
 
@@ -78,5 +79,30 @@ describe("EchoVault playlist documents", () => {
       { ...baseItem, referenceID: "webdav-track:https://user:password@dav.example/music/One.mp3" },
       "https://dav.example/music/",
     )).toBeNull();
+  });
+
+  it("rebases references from a known legacy root without accepting unrelated origins", () => {
+    const playlist = playlistFromTracks(
+      "Migrated",
+      [{ id: "Album/One.mp3", title: "One", artist: "Artist", album: "Album", path: "Album/One.mp3" }],
+      "http://192.0.2.10:4243/music/",
+    );
+    playlist.items.push({
+      ...playlist.items[0],
+      id: "64b67120-201b-4c55-8507-0d08dc182a7c",
+      referenceID: "webdav-track:https://unrelated.example/music/Two.mp3",
+    });
+
+    const migrated = rebasePlaylistWebDavReferences(
+      playlist,
+      "https://webdav.kunini.ru/music/",
+      ["http://192.0.2.10:4243/music/"],
+    );
+
+    expect(migrated.items.map((item) => item.referenceID)).toEqual([
+      "webdav-track:https://webdav.kunini.ru/music/Album/One.mp3",
+      "webdav-track:https://unrelated.example/music/Two.mp3",
+    ]);
+    expect(migrated.updatedAt).toBeGreaterThanOrEqual(playlist.updatedAt);
   });
 });

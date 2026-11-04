@@ -9,9 +9,8 @@ export interface SessionUser {
 export interface WebDavSettings {
   configured: boolean;
   endpoint: string;
-  username: string;
-  hasPassword: boolean;
-  allowsInsecureHttp: boolean;
+  managed: true;
+  legacyEndpoints: string[];
 }
 
 export interface WebDavItem {

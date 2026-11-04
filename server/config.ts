@@ -2,12 +2,15 @@ import { resolve } from "node:path";
 
 export type AuthMode = "proxy" | "dev";
 
+export const kuniniWebDavEndpoint = "https://webdav.kunini.ru/music/";
+
 export interface ServerConfig {
   host: string;
   port: number;
   authMode: AuthMode;
   credentialsKey?: string;
   credentialsFile: string;
+  webDavEndpoint: string;
   allowedWebDavHosts: string[];
   isProduction: boolean;
 }
@@ -28,14 +31,13 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Server
     throw new Error("PORT must be an integer between 1 and 65535.");
   }
 
-  const allowedWebDavHosts = (environment.WEBDAV_ALLOWED_HOSTS ?? "")
+  const webDavHost = new URL(kuniniWebDavEndpoint).hostname;
+  const allowedWebDavHosts = (environment.WEBDAV_ALLOWED_HOSTS ?? webDavHost)
     .split(",")
     .map((host) => host.trim().toLowerCase())
     .filter(Boolean);
 
-  if (isProduction && allowedWebDavHosts.length === 0) {
-    throw new Error("WEBDAV_ALLOWED_HOSTS is required in production.");
-  }
+  if (!allowedWebDavHosts.includes(webDavHost)) allowedWebDavHosts.push(webDavHost);
 
   return {
     host: environment.HOST ?? "127.0.0.1",
@@ -43,6 +45,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Server
     authMode,
     credentialsKey: environment.CREDENTIALS_KEY,
     credentialsFile: resolve(environment.CREDENTIALS_FILE ?? "data/credentials.json"),
+    webDavEndpoint: kuniniWebDavEndpoint,
     allowedWebDavHosts,
     isProduction,
   };

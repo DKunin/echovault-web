@@ -23,15 +23,6 @@ export function getWebDavSettings(): Promise<WebDavSettings> {
   return api("/api/settings/webdav");
 }
 
-export function saveWebDavSettings(input: {
-  endpoint: string;
-  username: string;
-  password: string;
-  allowsInsecureHttp: boolean;
-}): Promise<WebDavSettings> {
-  return api("/api/settings/webdav", { method: "PUT", body: JSON.stringify(input) });
-}
-
 export function listWebDavItems(path = ""): Promise<{ path: string; items: WebDavItem[] }> {
   return api(`/api/webdav/items?path=${encodeURIComponent(path)}`);
 }
