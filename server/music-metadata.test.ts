@@ -88,7 +88,9 @@ describe("MusicBrainz metadata provider", () => {
   });
 
   it("deduplicates concurrent lookups for the same track", async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ recordings: [] }), { status: 200 }));
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => (
+      new Response(JSON.stringify({ recordings: [] }), { status: 200 })
+    ));
     const provider = new MusicBrainzMetadataProvider({ fetch: fetchMock, minimumIntervalMs: 0 });
 
     await Promise.all([
@@ -102,7 +104,9 @@ describe("MusicBrainz metadata provider", () => {
   it("spaces MusicBrainz requests to respect the public API rate limit", async () => {
     let currentTime = 10_000;
     const waits: number[] = [];
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response(JSON.stringify({ recordings: [] }), { status: 200 }));
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => (
+      new Response(JSON.stringify({ recordings: [] }), { status: 200 })
+    ));
     const provider = new MusicBrainzMetadataProvider({
       fetch: fetchMock,
       now: () => currentTime,
