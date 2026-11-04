@@ -1,4 +1,5 @@
 const musicBrainzEndpoint = "https://musicbrainz.org/ws/2/recording/";
+const musicBrainzReleaseGroupEndpoint = "https://musicbrainz.org/ws/2/release-group/";
 const coverArtEndpoint = "https://coverartarchive.org/release-group/";
 const userAgent = "EchoVault/1.0 (https://music.kunini.ru)";
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -45,8 +46,11 @@ interface MusicBrainzArtistCredit {
 interface MusicBrainzReleaseGroup {
   id?: string;
   title?: string;
+  score?: number;
+  "first-release-date"?: string;
   "primary-type"?: string;
   "secondary-types"?: string[];
+  "artist-credit"?: MusicBrainzArtistCredit[];
 }
 
 interface MusicBrainzRelease {
@@ -71,6 +75,10 @@ interface MusicBrainzRecording {
 interface MusicBrainzSearchResponse {
   count?: number;
   recordings?: MusicBrainzRecording[];
+}
+
+interface MusicBrainzReleaseGroupSearchResponse {
+  "release-groups"?: MusicBrainzReleaseGroup[];
 }
 
 interface CacheEntry<T> {
@@ -223,7 +231,16 @@ function releaseScore(release: MusicBrainzRelease): number {
   if (secondaryTypes.length === 0) score += 25;
   if (!secondaryTypes.includes("Compilation")) score += 15;
   if (creditedArtist && normalized(creditedArtist) !== "various artists") score += 10;
-  return score;
+  return score - releaseVariantPenalty(release);
+}
+
+function releaseVariantPenalty(release: MusicBrainzRelease): number {
+  const group = release["release-group"];
+  const description = `${release.title ?? ""} ${group?.title ?? ""}`;
+  const normalizedDescription = normalized(description);
+  const hasDatedVenueTitle = /(?:^|\D)(?:19|20)\d{2}[-./]\d{2}[-./]\d{2}(?:\D|$)/u.test(description);
+  const hasVariantLabel = /\b(?:bootleg|demo|live|remix(?:ed)?)\b/u.test(normalizedDescription);
+  return hasDatedVenueTitle || hasVariantLabel ? 100 : 0;
 }
 
 function releaseYear(release: MusicBrainzRelease): number {
@@ -290,7 +307,23 @@ function isPreferredRecording(recording: MusicBrainzRecording): boolean {
   return release?.status === "Official"
     && ["Album", "EP", "Single"].includes(group?.["primary-type"] ?? "")
     && secondaryTypes.length === 0
+    && releaseVariantPenalty(release) === 0
     && recordingVariantPenalty(recording) === 0;
+}
+
+function bestMatchingTitleAlbum(
+  groups: MusicBrainzReleaseGroup[],
+  fallback: ResolvedTrackMetadata,
+): MusicBrainzReleaseGroup | null {
+  return groups
+    .filter((group) => uuidPattern.test(group.id ?? "")
+      && Number(group.score ?? 0) >= 90
+      && group["primary-type"] === "Album"
+      && (group["secondary-types"] ?? []).length === 0
+      && comparable(group.title ?? "", fallback.title)
+      && comparable(artistCredit(group["artist-credit"]), fallback.artist))
+    .sort((left, right) => Number(right.score ?? 0) - Number(left.score ?? 0)
+      || String(left["first-release-date"] ?? "9999").localeCompare(String(right["first-release-date"] ?? "9999")))[0] ?? null;
 }
 
 export class MusicBrainzMetadataProvider implements TrackMetadataProvider {
@@ -420,6 +453,19 @@ export class MusicBrainzMetadataProvider implements TrackMetadataProvider {
       recordings.push(...pageRecordings);
       recording = bestRecording(recordings, fallback);
       if (!recording || isPreferredRecording(recording)) break;
+      if (page === 0) {
+        const titleAlbum = await this.findMatchingTitleAlbum(fallback);
+        if (titleAlbum?.id && titleAlbum.title) {
+          return {
+            path: fallback.path,
+            title: recording.title ?? fallback.title,
+            artist: artistCredit(recording["artist-credit"]) || fallback.artist,
+            album: titleAlbum.title,
+            source: "musicbrainz",
+            releaseGroupId: titleAlbum.id,
+          };
+        }
+      }
       if (!Number.isFinite(payload.count) || Number(payload.count) <= offset + pageRecordings.length) break;
     }
 
@@ -437,6 +483,16 @@ export class MusicBrainzMetadataProvider implements TrackMetadataProvider {
     };
   }
 
+  private async findMatchingTitleAlbum(fallback: ResolvedTrackMetadata): Promise<MusicBrainzReleaseGroup | null> {
+    const query = `releasegroup:${lucenePhrase(fallback.title)} AND artist:${lucenePhrase(fallback.artist)} AND primarytype:album`;
+    const url = new URL(musicBrainzReleaseGroupEndpoint);
+    url.searchParams.set("query", query);
+    url.searchParams.set("fmt", "json");
+    url.searchParams.set("limit", "10");
+    const payload = await this.requestMusicBrainz<MusicBrainzReleaseGroupSearchResponse>(url);
+    return bestMatchingTitleAlbum(Array.isArray(payload["release-groups"]) ? payload["release-groups"] : [], fallback);
+  }
+
   private async scheduledRequest<T>(task: () => Promise<T>): Promise<T> {
     const run = this.requestQueue.then(async () => {
       const wait = Math.max(0, this.lastRequestAt + this.minimumIntervalMs - this.now());
@@ -448,7 +504,7 @@ export class MusicBrainzMetadataProvider implements TrackMetadataProvider {
     return run;
   }
 
-  private async requestMusicBrainz(url: URL): Promise<MusicBrainzSearchResponse> {
+  private async requestMusicBrainz<T = MusicBrainzSearchResponse>(url: URL): Promise<T> {
     for (let attempt = 0; attempt < maximumProviderAttempts; attempt += 1) {
       const response = await this.scheduledRequest(() => this.fetchImpl(url, {
         headers: { "User-Agent": userAgent, Accept: "application/json" },
@@ -461,7 +517,7 @@ export class MusicBrainzMetadataProvider implements TrackMetadataProvider {
       if (!response.ok) throw new MetadataProviderError(`MusicBrainz returned HTTP ${response.status}.`);
       const body = await readLimitedBody(response, maximumProviderResponseBytes);
       try {
-        return JSON.parse(body.toString("utf8")) as MusicBrainzSearchResponse;
+        return JSON.parse(body.toString("utf8")) as T;
       } catch {
         throw new MetadataProviderError("MusicBrainz returned invalid JSON.");
       }

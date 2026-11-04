@@ -130,47 +130,56 @@ describe("MusicBrainz metadata provider", () => {
     expect(result).toMatchObject({ title: "Don’t Stop Believin’", artist: "Journey", album: "Escape" });
   });
 
-  it("checks bounded later search pages when the first page has only compilation or live releases", async () => {
+  it("uses an exact album-title fallback when recording results contain only misclassified live releases", async () => {
     const fetchMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(new Response(JSON.stringify({
         count: 101,
-        recordings: [{
-          title: "Master of Puppets",
-          score: 100,
-          "first-release-date": "2014",
-          "artist-credit": [{ name: "Metallica" }],
-          releases: [{
-            title: "By Request",
-            status: "Official",
+        recordings: [
+          {
+            title: "Master of Puppets",
+            score: 100,
+            "first-release-date": "2014",
             "artist-credit": [{ name: "Metallica" }],
-            "release-group": {
-              id: "11111111-1111-4111-8111-111111111111",
+            releases: [{
               title: "By Request",
-              "primary-type": "Album",
-              "secondary-types": ["Compilation", "Live"],
-            },
-          }],
-        }],
+              status: "Official",
+              "artist-credit": [{ name: "Metallica" }],
+              "release-group": {
+                id: "11111111-1111-4111-8111-111111111111",
+                title: "By Request",
+                "primary-type": "Album",
+                "secondary-types": ["Compilation", "Live"],
+              },
+            }],
+          },
+          {
+            title: "Master of Puppets",
+            score: 100,
+            "first-release-date": "2018-04-11",
+            "artist-credit": [{ name: "Metallica" }],
+            releases: [{
+              title: "2018-04-11: Palexpo, Geneva, Switzerland",
+              status: "Official",
+              "artist-credit": [{ name: "Metallica" }],
+              "release-group": {
+                id: "33333333-3333-4333-8333-333333333333",
+                title: "2018-04-11: Palexpo, Geneva, Switzerland",
+                "primary-type": "Album",
+                "secondary-types": [],
+              },
+            }],
+          },
+        ],
       }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
-        count: 101,
-        recordings: [{
+        "release-groups": [{
+          id: "22222222-2222-4222-8222-222222222222",
           title: "Master of Puppets",
-          score: 99,
+          score: 100,
           "first-release-date": "1986-03-03",
+          "primary-type": "Album",
+          "secondary-types": [],
           "artist-credit": [{ name: "Metallica" }],
-          releases: [{
-            title: "Master of Puppets",
-            status: "Official",
-            date: "1986",
-            "artist-credit": [{ name: "Metallica" }],
-            "release-group": {
-              id: "22222222-2222-4222-8222-222222222222",
-              title: "Master of Puppets",
-              "primary-type": "Album",
-              "secondary-types": [],
-            },
-          }],
         }],
       }), { status: 200 }));
     const provider = new MusicBrainzMetadataProvider({ fetch: fetchMock, minimumIntervalMs: 0 });
@@ -179,7 +188,58 @@ describe("MusicBrainz metadata provider", () => {
 
     expect(result).toMatchObject({ title: "Master of Puppets", artist: "Metallica", album: "Master of Puppets" });
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(new URL(String(fetchMock.mock.calls[1][0])).searchParams.get("offset")).toBe("100");
+    expect(new URL(String(fetchMock.mock.calls[1][0])).pathname).toBe("/ws/2/release-group/");
+  });
+
+  it("checks bounded later recording pages when no exact title album exists", async () => {
+    const poorRecording = {
+      title: "Song",
+      score: 100,
+      "first-release-date": "2014",
+      "artist-credit": [{ name: "Artist" }],
+      releases: [{
+        title: "Live Collection",
+        status: "Official",
+        "artist-credit": [{ name: "Artist" }],
+        "release-group": {
+          id: "11111111-1111-4111-8111-111111111111",
+          title: "Live Collection",
+          "primary-type": "Album",
+          "secondary-types": ["Live"],
+        },
+      }],
+    };
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ count: 101, recordings: [poorRecording] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ "release-groups": [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        count: 101,
+        recordings: [{
+          title: "Song",
+          score: 99,
+          "first-release-date": "1981",
+          "artist-credit": [{ name: "Artist" }],
+          releases: [{
+            title: "Original Album",
+            status: "Official",
+            date: "1981",
+            "artist-credit": [{ name: "Artist" }],
+            "release-group": {
+              id: "22222222-2222-4222-8222-222222222222",
+              title: "Original Album",
+              "primary-type": "Album",
+              "secondary-types": [],
+            },
+          }],
+        }],
+      }), { status: 200 }));
+    const provider = new MusicBrainzMetadataProvider({ fetch: fetchMock, minimumIntervalMs: 0 });
+
+    const result = await provider.lookup("Music/Artist - Song.mp3");
+
+    expect(result.album).toBe("Original Album");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(new URL(String(fetchMock.mock.calls[2][0])).searchParams.get("offset")).toBe("100");
   });
 
   it("keeps cleaned filename metadata when MusicBrainz has no confident match", async () => {
